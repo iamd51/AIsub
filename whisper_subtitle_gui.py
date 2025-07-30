@@ -26,6 +26,8 @@ class WhisperSubtitleGUI:
         self.use_audio_file = tk.BooleanVar(value=False)
         self.custom_model_dir = tk.StringVar()
         self.use_custom_model_dir = tk.BooleanVar(value=False)
+        self.device = tk.StringVar(value="auto")
+        self.use_gpu = tk.BooleanVar(value=True)
         self.is_processing = False
         
         self.setup_ui()
@@ -121,13 +123,30 @@ class WhisperSubtitleGUI:
         self.model_dir_btn = ttk.Button(self.whisper_frame, text="瀏覽", command=self.select_model_directory, state="disabled")
         self.model_dir_btn.grid(row=2, column=3, padx=5)
         
+        # GPU 加速設定
+        gpu_frame = ttk.Frame(self.whisper_frame)
+        gpu_frame.grid(row=3, column=0, columnspan=4, sticky=tk.W, pady=(5, 0))
+        
+        ttk.Checkbutton(gpu_frame, text="使用 GPU 加速 (推薦)", 
+                       variable=self.use_gpu, command=self.toggle_gpu_settings).pack(side=tk.LEFT)
+        
+        ttk.Label(gpu_frame, text="設備:").pack(side=tk.LEFT, padx=(20, 5))
+        device_combo = ttk.Combobox(gpu_frame, textvariable=self.device,
+                                   values=["auto", "cuda", "cpu"], 
+                                   state="readonly", width=8)
+        device_combo.pack(side=tk.LEFT, padx=5)
+        
+        self.gpu_info_label = ttk.Label(gpu_frame, text="", font=("Arial", 8), foreground="blue")
+        self.gpu_info_label.pack(side=tk.LEFT, padx=(10, 0))
+        
         # 模型管理按鈕
         model_mgmt_frame = ttk.Frame(self.whisper_frame)
-        model_mgmt_frame.grid(row=3, column=0, columnspan=4, sticky=tk.W, pady=(5, 0))
+        model_mgmt_frame.grid(row=4, column=0, columnspan=4, sticky=tk.W, pady=(5, 0))
         
         ttk.Button(model_mgmt_frame, text="查看預設位置", command=self.show_default_model_location).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(model_mgmt_frame, text="檢查已下載模型", command=self.check_downloaded_models).pack(side=tk.LEFT, padx=5)
         ttk.Button(model_mgmt_frame, text="設定環境變數", command=self.show_env_setup).pack(side=tk.LEFT, padx=5)
+        ttk.Button(model_mgmt_frame, text="檢查 GPU", command=self.check_gpu_availability).pack(side=tk.LEFT, padx=5)
         
         # 字幕設定區域
         subtitle_frame = ttk.LabelFrame(main_frame, text="字幕設定", padding="10")
@@ -211,8 +230,11 @@ class WhisperSubtitleGUI:
                     self.use_custom_model_dir.set(config.get("use_custom_model_dir", False))
                     self.custom_model_dir.set(config.get("custom_model_dir", ""))
                     self.operation_mode.set(config.get("operation_mode", "generate_and_burn"))
+                    self.use_gpu.set(config.get("use_gpu", True))
+                    self.device.set(config.get("device", "auto"))
                     self.toggle_audio_input()  # 更新界面狀態
                     self.toggle_custom_model_dir()  # 更新模型目錄界面狀態
+                    self.toggle_gpu_settings()  # 更新 GPU 界面狀態
                     self.update_ui_mode()  # 更新操作模式界面
         except Exception as e:
             self.log(f"載入設定失敗: {e}")
@@ -228,7 +250,9 @@ class WhisperSubtitleGUI:
                 "use_audio_file": self.use_audio_file.get(),
                 "use_custom_model_dir": self.use_custom_model_dir.get(),
                 "custom_model_dir": self.custom_model_dir.get(),
-                "operation_mode": self.operation_mode.get()
+                "operation_mode": self.operation_mode.get(),
+                "use_gpu": self.use_gpu.get(),
+                "device": self.device.get()
             }
             with open("whisper_config.json", 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
@@ -516,6 +540,69 @@ class WhisperSubtitleGUI:
         
         ttk.Button(btn_frame, text="快速設定環境變數", command=set_env_var).pack()
     
+    def toggle_gpu_settings(self):
+        """切換 GPU 設定"""
+        if self.use_gpu.get():
+            self.device.set("auto")
+            self.gpu_info_label.config(text="將自動偵測最佳設備")
+        else:
+            self.device.set("cpu")
+            self.gpu_info_label.config(text="使用 CPU 處理 (較慢)")
+    
+    def check_gpu_availability(self):
+        """檢查 GPU 可用性"""
+        gpu_info = "GPU 可用性檢查:\n\n"
+        
+        try:
+            import torch
+            if torch.cuda.is_available():
+                gpu_count = torch.cuda.device_count()
+                gpu_info += f"✅ CUDA 可用\n"
+                gpu_info += f"📊 GPU 數量: {gpu_count}\n"
+                
+                for i in range(gpu_count):
+                    gpu_name = torch.cuda.get_device_name(i)
+                    gpu_memory = torch.cuda.get_device_properties(i).total_memory / 1024**3
+                    gpu_info += f"   GPU {i}: {gpu_name} ({gpu_memory:.1f} GB)\n"
+                
+                current_gpu = torch.cuda.current_device()
+                gpu_info += f"🎯 當前使用: GPU {current_gpu}\n"
+            else:
+                gpu_info += "❌ CUDA 不可用\n"
+                gpu_info += "💡 將使用 CPU 處理\n"
+        except ImportError:
+            gpu_info += "❌ PyTorch 未安裝\n"
+            gpu_info += "💡 無法檢查 GPU 狀態\n"
+        except Exception as e:
+            gpu_info += f"⚠️ 檢查時出錯: {e}\n"
+        
+        # 檢查其他 GPU 加速選項
+        try:
+            import whisper
+            gpu_info += f"\n🎤 Whisper 版本: {whisper.__version__}\n"
+        except:
+            pass
+        
+        gpu_info += "\n💡 建議:\n"
+        gpu_info += "- 如果有 NVIDIA GPU，使用 CUDA 會大幅提升速度\n"
+        gpu_info += "- 如果沒有 GPU，CPU 模式仍可正常工作\n"
+        gpu_info += "- 可以嘗試 Const-me/Whisper 獲得更好的 GPU 性能\n"
+        
+        # 顯示資訊視窗
+        info_window = tk.Toplevel(self.root)
+        info_window.title("GPU 可用性檢查")
+        info_window.geometry("500x400")
+        
+        text_widget = tk.Text(info_window, wrap=tk.WORD, padx=10, pady=10)
+        text_widget.insert(1.0, gpu_info)
+        text_widget.config(state=tk.DISABLED)
+        
+        scrollbar = ttk.Scrollbar(info_window, orient=tk.VERTICAL, command=text_widget.yview)
+        text_widget.configure(yscrollcommand=scrollbar.set)
+        
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    
     def update_ui_mode(self):
         """根據操作模式更新 UI"""
         mode = self.operation_mode.get()
@@ -774,6 +861,29 @@ class WhisperSubtitleGUI:
                     "--verbose", "True"
                 ]
                 
+                # 添加設備參數 (GPU 加速)
+                if self.use_gpu.get():
+                    device = self.device.get()
+                    if device == "auto":
+                        # 自動偵測最佳設備
+                        try:
+                            import torch
+                            if torch.cuda.is_available():
+                                device = "cuda"
+                                self.log("🚀 偵測到 CUDA，使用 GPU 加速")
+                            else:
+                                device = "cpu"
+                                self.log("💻 未偵測到 CUDA，使用 CPU")
+                        except ImportError:
+                            device = "cpu"
+                            self.log("💻 PyTorch 未安裝，使用 CPU")
+                    
+                    cmd.extend(["--device", device])
+                    self.log(f"⚙️ 使用設備: {device}")
+                else:
+                    cmd.extend(["--device", "cpu"])
+                    self.log("💻 強制使用 CPU 模式")
+                
                 # 添加語言參數（如果不是自動偵測）
                 if self.language.get() != "auto":
                     cmd.extend(["--language", self.language.get()])
@@ -972,10 +1082,25 @@ class WhisperSubtitleGUI:
             
             self.log("🐍 使用 Python API 調用 Whisper...")
             
+            # 決定使用的設備
+            device = "cpu"
+            if self.use_gpu.get():
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        device = "cuda"
+                        self.log("🚀 Python API 使用 GPU 加速")
+                    else:
+                        self.log("💻 GPU 不可用，Python API 使用 CPU")
+                except ImportError:
+                    self.log("💻 PyTorch 未安裝，Python API 使用 CPU")
+            else:
+                self.log("💻 Python API 強制使用 CPU")
+            
             # 載入模型
             self.set_status("正在載入 Whisper 模型...", "blue")
-            model = whisper.load_model(self.whisper_model.get())
-            self.log(f"✅ 模型 {self.whisper_model.get()} 載入成功")
+            model = whisper.load_model(self.whisper_model.get(), device=device)
+            self.log(f"✅ 模型 {self.whisper_model.get()} 載入成功 (設備: {device})")
             
             # 轉錄音訊
             self.set_status("正在轉錄音訊...", "blue")
