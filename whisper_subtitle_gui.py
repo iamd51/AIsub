@@ -7,7 +7,13 @@ import os
 import subprocess
 import threading
 import json
+import time
+import warnings
 from pathlib import Path
+
+# 抑制 Whisper 的 Triton 警告
+warnings.filterwarnings("ignore", message=".*Failed to launch Triton kernels.*")
+warnings.filterwarnings("ignore", message=".*falling back to a slower.*")
 
 class WhisperSubtitleGUI:
     def __init__(self):
@@ -585,8 +591,14 @@ class WhisperSubtitleGUI:
         
         gpu_info += "\n💡 建議:\n"
         gpu_info += "- 如果有 NVIDIA GPU，使用 CUDA 會大幅提升速度\n"
+        gpu_info += "- Windows 上可能會看到 Triton 警告，但不影響 GPU 功能\n"
         gpu_info += "- 如果沒有 GPU，CPU 模式仍可正常工作\n"
         gpu_info += "- 可以嘗試 Const-me/Whisper 獲得更好的 GPU 性能\n"
+        
+        gpu_info += "\n⚠️ 常見警告說明:\n"
+        gpu_info += "- 'Failed to launch Triton kernels' 是正常的\n"
+        gpu_info += "- Triton 在 Windows 上支援有限\n"
+        gpu_info += "- GPU 加速仍然有效，只是使用備用實現\n"
         
         # 顯示資訊視窗
         info_window = tk.Toplevel(self.root)
@@ -810,6 +822,23 @@ class WhisperSubtitleGUI:
                 self.log(f"🎯 使用模型: {self.whisper_model.get()}")
                 self.log(f"🌍 語言設定: {self.language.get()}")
                 
+                # 顯示模型資訊
+                try:
+                    import whisper
+                    model_info = {
+                        'tiny': '39 MB, 最快速度',
+                        'base': '74 MB, 快速',
+                        'small': '244 MB, 平衡',
+                        'medium': '769 MB, 推薦',
+                        'large': '1550 MB, 最高精度',
+                        'large-v3': '1550 MB, 最新版本',
+                        'turbo': '809 MB, 快速高精度'
+                    }
+                    model_desc = model_info.get(self.whisper_model.get(), '未知模型')
+                    self.log(f"📋 模型資訊: {model_desc}")
+                except:
+                    pass
+                
                 # 檢查檔案是否存在
                 if not os.path.exists(input_file):
                     raise FileNotFoundError(f"輸入檔案不存在: {input_file}")
@@ -951,29 +980,42 @@ class WhisperSubtitleGUI:
                 
                 # 即時顯示輸出並解析進度
                 output_lines = []
+                last_progress_time = time.time()
+                
                 try:
                     for line in iter(process.stdout.readline, ''):
                         if line:
                             try:
                                 line = line.strip()
-                                output_lines.append(line)
-                                self.log(line)
-                                
-                                # 解析進度資訊
-                                if "Loading model" in line:
-                                    self.set_status("正在載入 Whisper 模型...", "blue")
-                                elif "Detecting language" in line:
-                                    self.set_status("正在偵測語言...", "blue")
-                                elif "%" in line and ("transcribe" in line.lower() or "processing" in line.lower()):
-                                    self.set_status("正在轉錄音訊...", "blue")
-                                elif "Writing" in line and ".srt" in line:
-                                    self.set_status("正在寫入字幕檔案...", "blue")
+                                if line:  # 只記錄非空行
+                                    output_lines.append(line)
+                                    self.log(line)
+                                    
+                                    # 解析進度資訊
+                                    if "Loading model" in line:
+                                        self.set_status("正在載入 Whisper 模型...", "blue")
+                                    elif "Detecting language" in line:
+                                        self.set_status("正在偵測語言...", "blue")
+                                    elif "%" in line and ("transcribe" in line.lower() or "processing" in line.lower()):
+                                        self.set_status("正在轉錄音訊...", "blue")
+                                    elif "Writing" in line and ".srt" in line:
+                                        self.set_status("正在寫入字幕檔案...", "blue")
+                                    elif "100%" in line:
+                                        self.set_status("處理完成，正在生成字幕...", "blue")
+                                    
+                                    last_progress_time = time.time()
                             except UnicodeDecodeError as e:
                                 self.log(f"⚠️ 編碼錯誤，跳過此行: {e}")
                                 continue
                             except Exception as e:
                                 self.log(f"⚠️ 處理輸出時出錯: {e}")
                                 continue
+                        
+                        # 檢查是否長時間沒有輸出
+                        if time.time() - last_progress_time > 30:  # 30秒沒有輸出
+                            self.log("⏰ 處理中，請耐心等待...")
+                            last_progress_time = time.time()
+                            
                 except Exception as e:
                     self.log(f"⚠️ 讀取 Whisper 輸出時出錯: {e}")
                     self.log("   程式將繼續等待 Whisper 完成...")
@@ -983,63 +1025,71 @@ class WhisperSubtitleGUI:
                 self.log("-" * 50)
                 self.log(f"🏁 Whisper 處理完成，返回碼: {process.returncode}")
                 
-                # 如果命令行執行失敗，嘗試使用 Python API
-                if process.returncode != 0:
-                    self.log("⚠️ 命令行執行失敗，嘗試使用 Python API...")
+                self.log(f"🏁 Whisper 命令行處理完成，返回碼: {process.returncode}")
+                
+                # 檢查是否生成了 SRT 檔案
+                input_name = Path(input_file).stem
+                possible_srt_files = [
+                    Path(self.output_srt_path.get()),
+                    Path(self.output_srt_path.get()).parent / f"{input_name}.srt",
+                    Path(".") / f"{input_name}.srt"
+                ]
+                
+                srt_found = False
+                for srt_file in possible_srt_files:
+                    if srt_file.exists():
+                        self.log(f"✅ 找到生成的字幕檔案: {srt_file}")
+                        if str(srt_file) != self.output_srt_path.get():
+                            # 移動到指定位置
+                            srt_file.rename(self.output_srt_path.get())
+                            self.log(f"📁 字幕檔案已移動至: {self.output_srt_path.get()}")
+                        srt_found = True
+                        process.returncode = 0  # 標記為成功
+                        break
+                
+                # 如果命令行沒有生成檔案，嘗試使用 Python API
+                if not srt_found:
+                    self.log("⚠️ 命令行未生成字幕檔案，嘗試使用 Python API...")
                     try:
                         success = self.run_whisper_python_api(input_file, self.output_srt_path.get())
                         if success:
                             process.returncode = 0  # 標記為成功
+                            srt_found = True
                     except Exception as e:
                         self.log(f"❌ Python API 也失敗: {e}")
                 
-                if process.returncode == 0:
-                    # 尋找生成的 SRT 檔案
-                    input_name = Path(input_file).stem
-                    generated_srt = Path(self.output_srt_path.get()).parent / f"{input_name}.srt"
-                    
-                    self.log(f"🔍 尋找生成的字幕檔案: {generated_srt}")
-                    
-                    if generated_srt.exists():
-                        # 如果輸出路徑不同，移動檔案
-                        if str(generated_srt) != self.output_srt_path.get():
-                            generated_srt.rename(self.output_srt_path.get())
-                            self.log(f"📁 字幕檔案已移動至: {self.output_srt_path.get()}")
+                if srt_found and process.returncode == 0:
+                    # 檢查字幕內容
+                    try:
+                        # 嘗試不同的編碼方式讀取 SRT 檔案
+                        content = None
+                        for encoding in ['utf-8', 'utf-8-sig', 'cp950', 'gbk', 'latin1']:
+                            try:
+                                with open(self.output_srt_path.get(), 'r', encoding=encoding) as f:
+                                    content = f.read()
+                                    break
+                            except UnicodeDecodeError:
+                                continue
                         
-                        # 檢查字幕內容
-                        try:
-                            # 嘗試不同的編碼方式讀取 SRT 檔案
-                            content = None
-                            for encoding in ['utf-8', 'utf-8-sig', 'cp950', 'gbk', 'latin1']:
-                                try:
-                                    with open(self.output_srt_path.get(), 'r', encoding=encoding) as f:
-                                        content = f.read()
-                                        break
-                                except UnicodeDecodeError:
-                                    continue
+                        if content:
+                            subtitle_count = content.count('-->')
+                            self.log(f"📊 生成字幕片段數量: {subtitle_count}")
                             
-                            if content:
-                                subtitle_count = content.count('-->')
-                                self.log(f"📊 生成字幕片段數量: {subtitle_count}")
+                            if subtitle_count > 0:
+                                self.set_status("✅ 字幕生成完成！", "green")
+                                self.log("🎉 字幕生成成功完成！")
+                                self.burn_btn.config(state="normal")
+                                
+                                # 顯示成功通知
+                                messagebox.showinfo("成功", f"字幕生成完成！\n\n檔案位置: {self.output_srt_path.get()}\n字幕片段: {subtitle_count} 個\n\n是否要預覽字幕內容？")
+                                self.preview_subtitles()
                             else:
-                                self.log("⚠️ 無法以任何編碼讀取字幕檔案")
-                        except Exception as e:
-                            self.log(f"⚠️ 無法讀取字幕內容: {e}")
-                        
-                        self.set_status("✅ 字幕生成完成！", "green")
-                        self.log("🎉 字幕生成成功完成！")
-                        self.burn_btn.config(state="normal")
-                        
-                        # 詢問是否要預覽字幕
-                        if messagebox.askyesno("完成", "字幕生成完成！是否要預覽字幕內容？"):
-                            self.preview_subtitles()
-                    else:
-                        self.set_status("❌ 找不到生成的字幕檔案", "red")
-                        self.log("❌ 錯誤: 找不到生成的字幕檔案")
-                        self.log("💡 可能的原因:")
-                        self.log("   - 輸出目錄權限不足")
-                        self.log("   - 磁碟空間不足")
-                        self.log("   - 檔案名稱包含特殊字符")
+                                self.set_status("⚠️ 字幕檔案為空", "orange")
+                                self.log("⚠️ 字幕檔案已生成但內容為空")
+                        else:
+                            self.log("⚠️ 無法以任何編碼讀取字幕檔案")
+                    except Exception as e:
+                        self.log(f"⚠️ 無法讀取字幕內容: {e}")
                 else:
                     self.set_status("❌ Whisper 執行失敗", "red")
                     self.log(f"❌ Whisper 執行失敗，返回碼: {process.returncode}")
@@ -1078,6 +1128,11 @@ class WhisperSubtitleGUI:
     def run_whisper_python_api(self, input_file: str, output_srt: str) -> bool:
         """使用 Python API 直接調用 Whisper"""
         try:
+            # 抑制 Whisper 警告
+            import warnings
+            warnings.filterwarnings("ignore", message=".*Failed to launch Triton kernels.*")
+            warnings.filterwarnings("ignore", message=".*falling back to a slower.*")
+            
             import whisper
             
             self.log("🐍 使用 Python API 調用 Whisper...")
@@ -1090,6 +1145,7 @@ class WhisperSubtitleGUI:
                     if torch.cuda.is_available():
                         device = "cuda"
                         self.log("🚀 Python API 使用 GPU 加速")
+                        self.log("ℹ️ 注意: Windows 上可能會看到 Triton 警告，但 GPU 仍正常工作")
                     else:
                         self.log("💻 GPU 不可用，Python API 使用 CPU")
                 except ImportError:
@@ -1099,7 +1155,9 @@ class WhisperSubtitleGUI:
             
             # 載入模型
             self.set_status("正在載入 Whisper 模型...", "blue")
-            model = whisper.load_model(self.whisper_model.get(), device=device)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                model = whisper.load_model(self.whisper_model.get(), device=device)
             self.log(f"✅ 模型 {self.whisper_model.get()} 載入成功 (設備: {device})")
             
             # 轉錄音訊
@@ -1114,7 +1172,10 @@ class WhisperSubtitleGUI:
             if self.use_audio_file.get():
                 options["word_timestamps"] = True
             
-            result = model.transcribe(input_file, **options)
+            # 執行轉錄並抑制警告
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                result = model.transcribe(input_file, **options)
             self.log("✅ 音訊轉錄完成")
             
             # 生成 SRT 格式
@@ -1125,8 +1186,22 @@ class WhisperSubtitleGUI:
             with open(output_srt, 'w', encoding='utf-8') as f:
                 f.write(srt_content)
             
-            self.log(f"✅ SRT 檔案已生成: {output_srt}")
-            return True
+            # 驗證檔案是否成功寫入
+            if os.path.exists(output_srt):
+                file_size = os.path.getsize(output_srt)
+                subtitle_count = srt_content.count('-->')
+                self.log(f"✅ SRT 檔案已生成: {output_srt}")
+                self.log(f"📊 檔案大小: {file_size} bytes, 字幕片段: {subtitle_count} 個")
+                
+                if subtitle_count > 0:
+                    self.set_status("✅ Python API 字幕生成完成！", "green")
+                    return True
+                else:
+                    self.log("⚠️ 字幕檔案為空")
+                    return False
+            else:
+                self.log("❌ 檔案寫入失敗")
+                return False
             
         except Exception as e:
             self.log(f"❌ Python API 執行失敗: {e}")
