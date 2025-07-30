@@ -1,0 +1,10 @@
+{
+  "model": "medium",
+  "language": "ja",
+  "font_size": 48,
+  "margin": 80,
+  "use_audio_file": false,
+  "use_custom_model_dir": false,
+  "custom_model_dir": "",
+  "operation_mode": "generate_and_burn"
+}
