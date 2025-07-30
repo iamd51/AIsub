@@ -740,14 +740,28 @@ class WhisperSubtitleGUI:
                 # 檢查 Whisper 是否安裝
                 self.set_status("檢查 Whisper 安裝...", "blue")
                 try:
-                    result = subprocess.run(["whisper", "--help"], capture_output=True, text=True, timeout=10)
-                    if result.returncode != 0:
-                        raise FileNotFoundError("Whisper 命令無法執行")
-                    self.log("✅ Whisper 安裝檢查通過")
+                    # 先嘗試檢查 whisper 模組
+                    import whisper as whisper_module
+                    self.log("✅ Whisper Python 模組已安裝")
+                    
+                    # 再檢查命令行工具
+                    result = subprocess.run(["whisper", "--help"], capture_output=True, text=True, timeout=15, shell=True)
+                    if result.returncode == 0:
+                        self.log("✅ Whisper 命令行工具檢查通過")
+                    else:
+                        self.log("⚠️ Whisper 命令行工具可能有問題，但 Python 模組可用")
+                        self.log("   將嘗試使用 Python 模組直接調用")
+                        
+                except ImportError:
+                    self.log("❌ Whisper Python 模組未安裝")
+                    raise FileNotFoundError("Whisper Python 模組未安裝")
                 except subprocess.TimeoutExpired:
-                    raise Exception("Whisper 命令響應超時")
+                    self.log("⚠️ Whisper 命令響應超時，但將繼續嘗試")
                 except FileNotFoundError:
-                    raise FileNotFoundError("找不到 Whisper 程式")
+                    self.log("⚠️ 找不到 whisper 命令，嘗試使用 Python 模組")
+                except Exception as e:
+                    self.log(f"⚠️ Whisper 檢查時出現問題: {e}")
+                    self.log("   將嘗試繼續執行...")
                 
                 # 建立 Whisper 命令
                 self.set_status("準備 Whisper 命令...", "blue")
@@ -779,16 +793,33 @@ class WhisperSubtitleGUI:
                 self.set_status("正在執行 Whisper 語音識別...", "blue")
                 self.log("🚀 開始語音識別處理...")
                 
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding='utf-8',
-                    env=env,
-                    bufsize=1,
-                    universal_newlines=True
-                )
+                # 嘗試不同的執行方式
+                try:
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        encoding='utf-8',
+                        env=env,
+                        bufsize=1,
+                        universal_newlines=True,
+                        shell=True  # 在 Windows 上使用 shell
+                    )
+                except Exception as e:
+                    self.log(f"⚠️ 使用 shell=True 執行失敗: {e}")
+                    # 嘗試不使用 shell
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        encoding='utf-8',
+                        env=env,
+                        bufsize=1,
+                        universal_newlines=True,
+                        shell=False
+                    )
                 
                 # 即時顯示輸出並解析進度
                 output_lines = []
@@ -812,6 +843,16 @@ class WhisperSubtitleGUI:
                 
                 self.log("-" * 50)
                 self.log(f"🏁 Whisper 處理完成，返回碼: {process.returncode}")
+                
+                # 如果命令行執行失敗，嘗試使用 Python API
+                if process.returncode != 0:
+                    self.log("⚠️ 命令行執行失敗，嘗試使用 Python API...")
+                    try:
+                        success = self.run_whisper_python_api(input_file, self.output_srt_path.get())
+                        if success:
+                            process.returncode = 0  # 標記為成功
+                    except Exception as e:
+                        self.log(f"❌ Python API 也失敗: {e}")
                 
                 if process.returncode == 0:
                     # 尋找生成的 SRT 檔案
@@ -883,6 +924,72 @@ class WhisperSubtitleGUI:
         # 在新線程中執行
         thread = threading.Thread(target=run_whisper, daemon=True)
         thread.start()
+    
+    def run_whisper_python_api(self, input_file: str, output_srt: str) -> bool:
+        """使用 Python API 直接調用 Whisper"""
+        try:
+            import whisper
+            
+            self.log("🐍 使用 Python API 調用 Whisper...")
+            
+            # 載入模型
+            self.set_status("正在載入 Whisper 模型...", "blue")
+            model = whisper.load_model(self.whisper_model.get())
+            self.log(f"✅ 模型 {self.whisper_model.get()} 載入成功")
+            
+            # 轉錄音訊
+            self.set_status("正在轉錄音訊...", "blue")
+            
+            # 設定轉錄選項
+            options = {
+                "language": self.language.get() if self.language.get() != "auto" else None,
+                "task": "transcribe"
+            }
+            
+            if self.use_audio_file.get():
+                options["word_timestamps"] = True
+            
+            result = model.transcribe(input_file, **options)
+            self.log("✅ 音訊轉錄完成")
+            
+            # 生成 SRT 格式
+            self.set_status("正在生成 SRT 字幕...", "blue")
+            srt_content = self.generate_srt_from_result(result)
+            
+            # 寫入檔案
+            with open(output_srt, 'w', encoding='utf-8') as f:
+                f.write(srt_content)
+            
+            self.log(f"✅ SRT 檔案已生成: {output_srt}")
+            return True
+            
+        except Exception as e:
+            self.log(f"❌ Python API 執行失敗: {e}")
+            return False
+    
+    def generate_srt_from_result(self, result) -> str:
+        """從 Whisper 結果生成 SRT 格式"""
+        srt_content = ""
+        
+        for i, segment in enumerate(result["segments"], 1):
+            start_time = self.seconds_to_srt_time(segment["start"])
+            end_time = self.seconds_to_srt_time(segment["end"])
+            text = segment["text"].strip()
+            
+            srt_content += f"{i}\n"
+            srt_content += f"{start_time} --> {end_time}\n"
+            srt_content += f"{text}\n\n"
+        
+        return srt_content
+    
+    def seconds_to_srt_time(self, seconds: float) -> str:
+        """將秒數轉換為 SRT 時間格式"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        millisecs = int((seconds % 1) * 1000)
+        
+        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
     
     def preview_subtitles(self):
         """預覽字幕內容"""
