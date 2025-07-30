@@ -240,7 +240,11 @@ class WhisperSubtitleGUI:
         file_path = filedialog.askopenfilename(
             title="選擇影片檔案",
             filetypes=[
-                ("影片檔案", "*.mp4 *.avi *.mov *.mkv *.wmv *.flv"),
+                ("影片檔案", "*.mp4 *.avi *.mov *.mkv *.wmv *.flv *.webm *.m4v"),
+                ("MP4 檔案", "*.mp4"),
+                ("AVI 檔案", "*.avi"),
+                ("MOV 檔案", "*.mov"),
+                ("MKV 檔案", "*.mkv"),
                 ("所有檔案", "*.*")
             ]
         )
@@ -257,8 +261,10 @@ class WhisperSubtitleGUI:
         file_path = filedialog.askopenfilename(
             title="選擇音訊檔案",
             filetypes=[
-                ("音訊檔案", "*.wav *.mp3 *.flac *.m4a *.aac"),
                 ("WAV 檔案", "*.wav"),
+                ("音訊檔案", "*.wav *.mp3 *.flac *.m4a *.aac *.ogg"),
+                ("MP3 檔案", "*.mp3"),
+                ("FLAC 檔案", "*.flac"),
                 ("所有檔案", "*.*")
             ]
         )
