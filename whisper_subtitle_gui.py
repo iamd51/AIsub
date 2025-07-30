@@ -793,7 +793,7 @@ class WhisperSubtitleGUI:
                 self.set_status("正在執行 Whisper 語音識別...", "blue")
                 self.log("🚀 開始語音識別處理...")
                 
-                # 嘗試不同的執行方式
+                # 嘗試不同的執行方式和編碼
                 try:
                     process = subprocess.Popen(
                         cmd,
@@ -801,6 +801,7 @@ class WhisperSubtitleGUI:
                         stderr=subprocess.STDOUT,
                         text=True,
                         encoding='utf-8',
+                        errors='replace',  # 處理編碼錯誤
                         env=env,
                         bufsize=1,
                         universal_newlines=True,
@@ -808,36 +809,64 @@ class WhisperSubtitleGUI:
                     )
                 except Exception as e:
                     self.log(f"⚠️ 使用 shell=True 執行失敗: {e}")
-                    # 嘗試不使用 shell
-                    process = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        encoding='utf-8',
-                        env=env,
-                        bufsize=1,
-                        universal_newlines=True,
-                        shell=False
-                    )
+                    # 嘗試不使用 shell，並使用不同的編碼策略
+                    try:
+                        process = subprocess.Popen(
+                            cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            encoding='utf-8',
+                            errors='replace',
+                            env=env,
+                            bufsize=1,
+                            universal_newlines=True,
+                            shell=False
+                        )
+                    except Exception as e2:
+                        self.log(f"⚠️ UTF-8 編碼失敗，嘗試系統預設編碼: {e2}")
+                        # 最後嘗試使用系統預設編碼
+                        process = subprocess.Popen(
+                            cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            encoding='cp950',  # Windows 繁體中文編碼
+                            errors='replace',
+                            env=env,
+                            bufsize=1,
+                            universal_newlines=True,
+                            shell=True
+                        )
                 
                 # 即時顯示輸出並解析進度
                 output_lines = []
-                for line in iter(process.stdout.readline, ''):
-                    if line:
-                        line = line.strip()
-                        output_lines.append(line)
-                        self.log(line)
-                        
-                        # 解析進度資訊
-                        if "Loading model" in line:
-                            self.set_status("正在載入 Whisper 模型...", "blue")
-                        elif "Detecting language" in line:
-                            self.set_status("正在偵測語言...", "blue")
-                        elif "%" in line and ("transcribe" in line.lower() or "processing" in line.lower()):
-                            self.set_status("正在轉錄音訊...", "blue")
-                        elif "Writing" in line and ".srt" in line:
-                            self.set_status("正在寫入字幕檔案...", "blue")
+                try:
+                    for line in iter(process.stdout.readline, ''):
+                        if line:
+                            try:
+                                line = line.strip()
+                                output_lines.append(line)
+                                self.log(line)
+                                
+                                # 解析進度資訊
+                                if "Loading model" in line:
+                                    self.set_status("正在載入 Whisper 模型...", "blue")
+                                elif "Detecting language" in line:
+                                    self.set_status("正在偵測語言...", "blue")
+                                elif "%" in line and ("transcribe" in line.lower() or "processing" in line.lower()):
+                                    self.set_status("正在轉錄音訊...", "blue")
+                                elif "Writing" in line and ".srt" in line:
+                                    self.set_status("正在寫入字幕檔案...", "blue")
+                            except UnicodeDecodeError as e:
+                                self.log(f"⚠️ 編碼錯誤，跳過此行: {e}")
+                                continue
+                            except Exception as e:
+                                self.log(f"⚠️ 處理輸出時出錯: {e}")
+                                continue
+                except Exception as e:
+                    self.log(f"⚠️ 讀取 Whisper 輸出時出錯: {e}")
+                    self.log("   程式將繼續等待 Whisper 完成...")
                 
                 process.wait()
                 
@@ -869,10 +898,21 @@ class WhisperSubtitleGUI:
                         
                         # 檢查字幕內容
                         try:
-                            with open(self.output_srt_path.get(), 'r', encoding='utf-8') as f:
-                                content = f.read()
+                            # 嘗試不同的編碼方式讀取 SRT 檔案
+                            content = None
+                            for encoding in ['utf-8', 'utf-8-sig', 'cp950', 'gbk', 'latin1']:
+                                try:
+                                    with open(self.output_srt_path.get(), 'r', encoding=encoding) as f:
+                                        content = f.read()
+                                        break
+                                except UnicodeDecodeError:
+                                    continue
+                            
+                            if content:
                                 subtitle_count = content.count('-->')
                                 self.log(f"📊 生成字幕片段數量: {subtitle_count}")
+                            else:
+                                self.log("⚠️ 無法以任何編碼讀取字幕檔案")
                         except Exception as e:
                             self.log(f"⚠️ 無法讀取字幕內容: {e}")
                         
@@ -994,12 +1034,26 @@ class WhisperSubtitleGUI:
     def preview_subtitles(self):
         """預覽字幕內容"""
         try:
-            with open(self.output_srt_path.get(), 'r', encoding='utf-8') as f:
-                content = f.read()
+            # 嘗試不同編碼讀取字幕檔案
+            content = None
+            used_encoding = None
+            
+            for encoding in ['utf-8', 'utf-8-sig', 'cp950', 'gbk', 'latin1']:
+                try:
+                    with open(self.output_srt_path.get(), 'r', encoding=encoding) as f:
+                        content = f.read()
+                        used_encoding = encoding
+                        break
+                except UnicodeDecodeError:
+                    continue
+            
+            if not content:
+                messagebox.showerror("錯誤", "無法讀取字幕檔案，可能是編碼問題")
+                return
             
             # 建立預覽視窗
             preview_window = tk.Toplevel(self.root)
-            preview_window.title("字幕預覽")
+            preview_window.title(f"字幕預覽 (編碼: {used_encoding})")
             preview_window.geometry("600x400")
             
             text_widget = tk.Text(preview_window, wrap=tk.WORD)
