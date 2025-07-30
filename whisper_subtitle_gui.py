@@ -712,19 +712,45 @@ class WhisperSubtitleGUI:
         def run_whisper():
             try:
                 self.start_progress()
-                self.set_status("正在使用 Whisper 生成字幕...", "blue")
-                self.log("開始 Whisper 字幕生成...")
+                self.set_status("正在初始化 Whisper...", "blue")
+                self.log("=" * 50)
+                self.log("🎤 開始 Whisper 字幕生成")
+                self.log("=" * 50)
                 
                 # 決定輸入檔案
                 input_file = self.audio_path.get() if self.use_audio_file.get() else self.video_path.get()
+                self.log(f"📁 輸入檔案: {input_file}")
+                self.log(f"🎯 使用模型: {self.whisper_model.get()}")
+                self.log(f"🌍 語言設定: {self.language.get()}")
+                
+                # 檢查檔案是否存在
+                if not os.path.exists(input_file):
+                    raise FileNotFoundError(f"輸入檔案不存在: {input_file}")
+                
+                # 顯示檔案資訊
+                file_size = os.path.getsize(input_file) / (1024 * 1024)  # MB
+                self.log(f"📊 檔案大小: {file_size:.1f} MB")
                 
                 # 設定環境變數（如果使用自訂模型位置）
                 env = os.environ.copy()
                 if self.use_custom_model_dir.get() and self.custom_model_dir.get():
                     env['WHISPER_CACHE_DIR'] = self.custom_model_dir.get()
-                    self.log(f"使用自訂模型位置: {self.custom_model_dir.get()}")
+                    self.log(f"🔧 使用自訂模型位置: {self.custom_model_dir.get()}")
+                
+                # 檢查 Whisper 是否安裝
+                self.set_status("檢查 Whisper 安裝...", "blue")
+                try:
+                    result = subprocess.run(["whisper", "--help"], capture_output=True, text=True, timeout=10)
+                    if result.returncode != 0:
+                        raise FileNotFoundError("Whisper 命令無法執行")
+                    self.log("✅ Whisper 安裝檢查通過")
+                except subprocess.TimeoutExpired:
+                    raise Exception("Whisper 命令響應超時")
+                except FileNotFoundError:
+                    raise FileNotFoundError("找不到 Whisper 程式")
                 
                 # 建立 Whisper 命令
+                self.set_status("準備 Whisper 命令...", "blue")
                 cmd = [
                     "whisper",
                     input_file,
@@ -744,58 +770,115 @@ class WhisperSubtitleGUI:
                         "--word_timestamps", "True",  # 詞級時間戳
                         "--condition_on_previous_text", "True"  # 基於前文的條件生成
                     ])
+                    self.log("🎵 使用音訊檔案模式，啟用高精度選項")
                 
-                self.log(f"執行命令: {' '.join(cmd)}")
+                self.log(f"⚙️ 執行命令: {' '.join(cmd)}")
+                self.log("-" * 50)
                 
                 # 執行 Whisper
+                self.set_status("正在執行 Whisper 語音識別...", "blue")
+                self.log("🚀 開始語音識別處理...")
+                
                 process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
                     encoding='utf-8',
-                    env=env  # 使用修改後的環境變數
+                    env=env,
+                    bufsize=1,
+                    universal_newlines=True
                 )
                 
-                # 即時顯示輸出
-                for line in process.stdout:
-                    self.log(line.strip())
+                # 即時顯示輸出並解析進度
+                output_lines = []
+                for line in iter(process.stdout.readline, ''):
+                    if line:
+                        line = line.strip()
+                        output_lines.append(line)
+                        self.log(line)
+                        
+                        # 解析進度資訊
+                        if "Loading model" in line:
+                            self.set_status("正在載入 Whisper 模型...", "blue")
+                        elif "Detecting language" in line:
+                            self.set_status("正在偵測語言...", "blue")
+                        elif "%" in line and ("transcribe" in line.lower() or "processing" in line.lower()):
+                            self.set_status("正在轉錄音訊...", "blue")
+                        elif "Writing" in line and ".srt" in line:
+                            self.set_status("正在寫入字幕檔案...", "blue")
                 
                 process.wait()
+                
+                self.log("-" * 50)
+                self.log(f"🏁 Whisper 處理完成，返回碼: {process.returncode}")
                 
                 if process.returncode == 0:
                     # 尋找生成的 SRT 檔案
                     input_name = Path(input_file).stem
                     generated_srt = Path(self.output_srt_path.get()).parent / f"{input_name}.srt"
                     
+                    self.log(f"🔍 尋找生成的字幕檔案: {generated_srt}")
+                    
                     if generated_srt.exists():
                         # 如果輸出路徑不同，移動檔案
                         if str(generated_srt) != self.output_srt_path.get():
                             generated_srt.rename(self.output_srt_path.get())
+                            self.log(f"📁 字幕檔案已移動至: {self.output_srt_path.get()}")
                         
-                        self.set_status("字幕生成完成！", "green")
-                        self.log(f"字幕已儲存至: {self.output_srt_path.get()}")
+                        # 檢查字幕內容
+                        try:
+                            with open(self.output_srt_path.get(), 'r', encoding='utf-8') as f:
+                                content = f.read()
+                                subtitle_count = content.count('-->')
+                                self.log(f"📊 生成字幕片段數量: {subtitle_count}")
+                        except Exception as e:
+                            self.log(f"⚠️ 無法讀取字幕內容: {e}")
+                        
+                        self.set_status("✅ 字幕生成完成！", "green")
+                        self.log("🎉 字幕生成成功完成！")
                         self.burn_btn.config(state="normal")
                         
                         # 詢問是否要預覽字幕
                         if messagebox.askyesno("完成", "字幕生成完成！是否要預覽字幕內容？"):
                             self.preview_subtitles()
                     else:
-                        self.set_status("找不到生成的字幕檔案", "red")
-                        self.log("錯誤: 找不到生成的字幕檔案")
+                        self.set_status("❌ 找不到生成的字幕檔案", "red")
+                        self.log("❌ 錯誤: 找不到生成的字幕檔案")
+                        self.log("💡 可能的原因:")
+                        self.log("   - 輸出目錄權限不足")
+                        self.log("   - 磁碟空間不足")
+                        self.log("   - 檔案名稱包含特殊字符")
                 else:
-                    self.set_status("Whisper 執行失敗", "red")
-                    self.log(f"Whisper 執行失敗，返回碼: {process.returncode}")
+                    self.set_status("❌ Whisper 執行失敗", "red")
+                    self.log(f"❌ Whisper 執行失敗，返回碼: {process.returncode}")
+                    self.log("💡 請檢查上方的錯誤訊息")
+                    
+                    # 顯示最後幾行輸出作為錯誤參考
+                    if output_lines:
+                        self.log("📋 最後的輸出訊息:")
+                        for line in output_lines[-5:]:
+                            self.log(f"   {line}")
                 
-            except FileNotFoundError:
-                self.set_status("找不到 Whisper", "red")
-                self.log("錯誤: 找不到 Whisper 程式，請確認已正確安裝")
-                messagebox.showerror("錯誤", "找不到 Whisper 程式\n請執行: pip install openai-whisper")
+            except FileNotFoundError as e:
+                self.set_status("❌ 找不到 Whisper", "red")
+                self.log("❌ 錯誤: 找不到 Whisper 程式")
+                self.log("💡 解決方法:")
+                self.log("   1. 執行 install_whisper.bat")
+                self.log("   2. 或手動執行: pip install openai-whisper")
+                self.log("   3. 重新啟動程式")
+                messagebox.showerror("錯誤", "找不到 Whisper 程式\n\n請執行以下步驟:\n1. 雙擊 install_whisper.bat\n2. 或執行: pip install openai-whisper\n3. 重新啟動程式")
             except Exception as e:
-                self.set_status(f"生成字幕失敗: {e}", "red")
-                self.log(f"錯誤: {e}")
+                self.set_status(f"❌ 生成字幕失敗: {e}", "red")
+                self.log(f"❌ 未預期的錯誤: {e}")
+                self.log("💡 請檢查:")
+                self.log("   - 檔案是否損壞")
+                self.log("   - 磁碟空間是否足夠")
+                self.log("   - 防毒軟體是否阻擋")
+                messagebox.showerror("錯誤", f"生成字幕時發生錯誤:\n{e}\n\n請檢查日誌中的詳細資訊")
             finally:
                 self.stop_progress()
+                self.log("=" * 50)
         
         # 在新線程中執行
         thread = threading.Thread(target=run_whisper, daemon=True)
@@ -833,8 +916,34 @@ class WhisperSubtitleGUI:
         def run_burn():
             try:
                 self.start_progress()
-                self.set_status("正在燒錄字幕到影片...", "blue")
-                self.log("開始燒錄字幕...")
+                self.set_status("正在準備燒錄字幕...", "blue")
+                self.log("=" * 50)
+                self.log("🔥 開始字幕燒錄處理")
+                self.log("=" * 50)
+                
+                # 檢查檔案
+                video_file = self.video_path.get()
+                srt_file = self.output_srt_path.get()
+                output_file = self.output_video_path.get()
+                
+                self.log(f"📹 影片檔案: {video_file}")
+                self.log(f"📝 字幕檔案: {srt_file}")
+                self.log(f"💾 輸出檔案: {output_file}")
+                
+                # 檢查檔案大小
+                video_size = os.path.getsize(video_file) / (1024 * 1024)  # MB
+                self.log(f"📊 影片大小: {video_size:.1f} MB")
+                
+                # 檢查字幕內容
+                try:
+                    with open(srt_file, 'r', encoding='utf-8') as f:
+                        srt_content = f.read()
+                        subtitle_count = srt_content.count('-->')
+                        self.log(f"📊 字幕片段數量: {subtitle_count}")
+                except Exception as e:
+                    self.log(f"⚠️ 讀取字幕檔案時出錯: {e}")
+                
+                self.set_status("正在載入影片和字幕...", "blue")
                 
                 # 更新設定檔
                 config = {
@@ -847,30 +956,51 @@ class WhisperSubtitleGUI:
                 with open("temp_config.json", 'w', encoding='utf-8') as f:
                     json.dump(config, f, indent=2)
                 
+                self.log(f"⚙️ 字幕設定: 字體大小={self.font_size.get()}, 邊距={self.margin.get()}")
+                
                 # 使用我們的 video_processor
+                self.set_status("正在處理影片和字幕...", "blue")
+                self.log("🎬 開始影片處理...")
+                
                 from video_processor import VideoProcessor
                 processor = VideoProcessor("temp_config.json")
+                
+                # 這裡可以添加進度回調，但先用基本版本
                 processor.burn_subtitles_to_video(
-                    self.video_path.get(),
-                    self.output_srt_path.get(),
-                    self.output_video_path.get()
+                    video_file,
+                    srt_file,
+                    output_file
                 )
                 
                 # 清理臨時檔案
                 if os.path.exists("temp_config.json"):
                     os.remove("temp_config.json")
                 
-                self.set_status("字幕燒錄完成！", "green")
-                self.log(f"影片已儲存至: {self.output_video_path.get()}")
-                
-                messagebox.showinfo("完成", f"字幕燒錄完成！\n輸出檔案: {self.output_video_path.get()}")
+                # 檢查輸出檔案
+                if os.path.exists(output_file):
+                    output_size = os.path.getsize(output_file) / (1024 * 1024)  # MB
+                    self.log(f"✅ 輸出檔案大小: {output_size:.1f} MB")
+                    
+                    self.set_status("✅ 字幕燒錄完成！", "green")
+                    self.log("🎉 字幕燒錄成功完成！")
+                    self.log(f"💾 檔案已儲存至: {output_file}")
+                    
+                    messagebox.showinfo("完成", f"字幕燒錄完成！\n\n輸出檔案: {output_file}\n檔案大小: {output_size:.1f} MB")
+                else:
+                    raise Exception("輸出檔案未生成")
                 
             except Exception as e:
-                self.set_status(f"燒錄失敗: {e}", "red")
-                self.log(f"燒錄錯誤: {e}")
-                messagebox.showerror("錯誤", f"燒錄字幕失敗: {e}")
+                self.set_status(f"❌ 燒錄失敗: {e}", "red")
+                self.log(f"❌ 燒錄錯誤: {e}")
+                self.log("💡 可能的原因:")
+                self.log("   - 磁碟空間不足")
+                self.log("   - 輸出路徑權限不足")
+                self.log("   - 影片檔案損壞")
+                self.log("   - 字幕檔案格式錯誤")
+                messagebox.showerror("錯誤", f"燒錄字幕失敗:\n{e}\n\n請檢查日誌中的詳細資訊")
             finally:
                 self.stop_progress()
+                self.log("=" * 50)
         
         # 在新線程中執行
         thread = threading.Thread(target=run_burn, daemon=True)
