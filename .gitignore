@@ -71,7 +71,29 @@ temp_audio.wav
 # 日誌檔案
 *.log
 
+# 開發用批次檔案
+check_gpu.bat
+move_whisper_models.bat
+start_optimized_gui.bat
+
+# 開發文件和摘要 (保留主要文件)
+*_SUMMARY.md
+*_UPDATE_SUMMARY.md
+COMPLETE_UPDATE_SUMMARY.md
+FINAL_CONFIRMATION.md
+GUI_LAYOUT_FIXED.md
+GUI_OPTIMIZATION_SUMMARY.md
+OPTIMIZATION_UPDATE_SUMMARY.md
+SUCCESS_SUMMARY.md
+music_troubleshooting.md
+
+# 工具腳本
+find_whisper_models.py
+
 # 測試檔案
+test_*.py
 test_*.mp4
 test_*.wav
 test_*.srt
+demo_*.py
+verify_*.py

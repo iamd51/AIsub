@@ -19,8 +19,11 @@ class WhisperSubtitleGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Whisper 字幕生成器")
-        self.root.geometry("800x600")
+        self.root.geometry("1000x800")  # 增加視窗大小
         self.root.resizable(True, True)
+        
+        # 設定最小視窗大小
+        self.root.minsize(900, 700)
         
         # 變數
         self.video_path = tk.StringVar()
@@ -34,6 +37,14 @@ class WhisperSubtitleGUI:
         self.use_custom_model_dir = tk.BooleanVar(value=False)
         self.device = tk.StringVar(value="auto")
         self.use_gpu = tk.BooleanVar(value=True)
+        self.music_mode = tk.BooleanVar(value=False)
+        self.filter_repetitive = tk.BooleanVar(value=True)
+        self.no_speech_threshold = tk.DoubleVar(value=0.6)
+        self.temperature = tk.DoubleVar(value=0.0)
+        self.use_optimization = tk.BooleanVar(value=True)
+        self.multi_pass_mode = tk.BooleanVar(value=False)
+        self.quality_level = tk.StringVar(value="auto")
+        self.content_type = tk.StringVar(value="auto")
         self.is_processing = False
         
         self.setup_ui()
@@ -41,8 +52,30 @@ class WhisperSubtitleGUI:
     
     def setup_ui(self):
         """設定使用者介面"""
-        # 主框架
-        main_frame = ttk.Frame(self.root, padding="10")
+        # 主框架 - 使用 Scrollable Frame
+        main_canvas = tk.Canvas(self.root)
+        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=main_canvas.yview)
+        scrollable_frame = ttk.Frame(main_canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+        )
+        
+        main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        main_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # 添加滑鼠滾輪支援
+        def _on_mousewheel(event):
+            main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        main_canvas.bind("<MouseWheel>", _on_mousewheel)
+        
+        main_canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # 主要內容框架
+        main_frame = ttk.Frame(scrollable_frame, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # 標題
@@ -51,7 +84,7 @@ class WhisperSubtitleGUI:
         
         # 模式選擇
         mode_frame = ttk.LabelFrame(main_frame, text="操作模式", padding="10")
-        mode_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        mode_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 5))
         
         self.operation_mode = tk.StringVar(value="generate_and_burn")
         
@@ -62,7 +95,7 @@ class WhisperSubtitleGUI:
         
         # 檔案選擇區域
         file_frame = ttk.LabelFrame(main_frame, text="檔案選擇", padding="10")
-        file_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        file_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(5, 10))
         
         # 影片檔案選擇
         ttk.Label(file_frame, text="影片檔案:").grid(row=0, column=0, sticky=tk.W, pady=2)
@@ -94,116 +127,185 @@ class WhisperSubtitleGUI:
         
         file_frame.columnconfigure(1, weight=1)
         
-        # Whisper 設定區域
-        self.whisper_frame = ttk.LabelFrame(main_frame, text="Whisper 設定", padding="10")
-        self.whisper_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        # Whisper 設定區域 - 使用更緊湊的水平佈局
+        self.whisper_frame = ttk.LabelFrame(main_frame, text="Whisper 設定", padding="8")
+        self.whisper_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(5, 8))
+        
+        # 第一行：基本設定
+        basic_row = ttk.Frame(self.whisper_frame)
+        basic_row.grid(row=0, column=0, columnspan=6, sticky=(tk.W, tk.E), pady=(0, 5))
         
         # 模型選擇
-        ttk.Label(self.whisper_frame, text="模型大小:").grid(row=0, column=0, sticky=tk.W, pady=2)
-        model_combo = ttk.Combobox(self.whisper_frame, textvariable=self.whisper_model, 
+        ttk.Label(basic_row, text="模型:").pack(side=tk.LEFT)
+        model_combo = ttk.Combobox(basic_row, textvariable=self.whisper_model, 
                                   values=["tiny", "base", "small", "medium", "large"], 
-                                  state="readonly", width=15)
-        model_combo.grid(row=0, column=1, sticky=tk.W, padx=5)
+                                  state="readonly", width=10)
+        model_combo.pack(side=tk.LEFT, padx=(5, 15))
         
         # 語言選擇
-        ttk.Label(self.whisper_frame, text="語言:").grid(row=0, column=2, sticky=tk.W, padx=(20, 5), pady=2)
-        lang_combo = ttk.Combobox(self.whisper_frame, textvariable=self.language,
+        ttk.Label(basic_row, text="語言:").pack(side=tk.LEFT)
+        lang_combo = ttk.Combobox(basic_row, textvariable=self.language,
                                  values=["ja", "en", "zh", "ko", "auto"], 
-                                 state="readonly", width=10)
-        lang_combo.grid(row=0, column=3, sticky=tk.W, padx=5)
+                                 state="readonly", width=8)
+        lang_combo.pack(side=tk.LEFT, padx=(5, 15))
         
-        # 模型說明
-        model_info = ttk.Label(self.whisper_frame, text="模型說明: tiny(快速) → base → small → medium(推薦) → large(最準確)", 
-                              font=("Arial", 8), foreground="gray")
-        model_info.grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(5, 0))
+        # GPU 設定
+        ttk.Checkbutton(basic_row, text="GPU 加速", 
+                       variable=self.use_gpu, command=self.toggle_gpu_settings).pack(side=tk.LEFT, padx=(0, 10))
         
-        # 模型位置設定
-        self.custom_model_check = ttk.Checkbutton(self.whisper_frame, text="自訂模型位置", 
-                                                 variable=self.use_custom_model_dir, 
-                                                 command=self.toggle_custom_model_dir)
-        self.custom_model_check.grid(row=2, column=0, sticky=tk.W, pady=(5, 0))
-        
-        self.model_dir_entry = ttk.Entry(self.whisper_frame, textvariable=self.custom_model_dir, width=40, state="disabled")
-        self.model_dir_entry.grid(row=2, column=1, columnspan=2, sticky=(tk.W, tk.E), padx=5)
-        
-        self.model_dir_btn = ttk.Button(self.whisper_frame, text="瀏覽", command=self.select_model_directory, state="disabled")
-        self.model_dir_btn.grid(row=2, column=3, padx=5)
-        
-        # GPU 加速設定
-        gpu_frame = ttk.Frame(self.whisper_frame)
-        gpu_frame.grid(row=3, column=0, columnspan=4, sticky=tk.W, pady=(5, 0))
-        
-        ttk.Checkbutton(gpu_frame, text="使用 GPU 加速 (推薦)", 
-                       variable=self.use_gpu, command=self.toggle_gpu_settings).pack(side=tk.LEFT)
-        
-        ttk.Label(gpu_frame, text="設備:").pack(side=tk.LEFT, padx=(20, 5))
-        device_combo = ttk.Combobox(gpu_frame, textvariable=self.device,
+        ttk.Label(basic_row, text="設備:").pack(side=tk.LEFT)
+        device_combo = ttk.Combobox(basic_row, textvariable=self.device,
                                    values=["auto", "cuda", "cpu"], 
-                                   state="readonly", width=8)
+                                   state="readonly", width=6)
         device_combo.pack(side=tk.LEFT, padx=5)
         
-        self.gpu_info_label = ttk.Label(gpu_frame, text="", font=("Arial", 8), foreground="blue")
-        self.gpu_info_label.pack(side=tk.LEFT, padx=(10, 0))
+        # 第二行：音樂和參數設定
+        music_row = ttk.Frame(self.whisper_frame)
+        music_row.grid(row=1, column=0, columnspan=6, sticky=(tk.W, tk.E), pady=(0, 5))
         
-        # 模型管理按鈕
-        model_mgmt_frame = ttk.Frame(self.whisper_frame)
-        model_mgmt_frame.grid(row=4, column=0, columnspan=4, sticky=tk.W, pady=(5, 0))
+        # 音樂模式
+        self.music_mode = tk.BooleanVar(value=False)
+        ttk.Checkbutton(music_row, text="🎵 音樂模式", 
+                       variable=self.music_mode, command=self.toggle_music_mode).pack(side=tk.LEFT, padx=(0, 15))
         
-        ttk.Button(model_mgmt_frame, text="查看預設位置", command=self.show_default_model_location).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(model_mgmt_frame, text="檢查已下載模型", command=self.check_downloaded_models).pack(side=tk.LEFT, padx=5)
-        ttk.Button(model_mgmt_frame, text="設定環境變數", command=self.show_env_setup).pack(side=tk.LEFT, padx=5)
-        ttk.Button(model_mgmt_frame, text="檢查 GPU", command=self.check_gpu_availability).pack(side=tk.LEFT, padx=5)
+        # 過濾選項
+        self.filter_repetitive = tk.BooleanVar(value=True)
+        ttk.Checkbutton(music_row, text="過濾重複", 
+                       variable=self.filter_repetitive).pack(side=tk.LEFT, padx=(0, 15))
         
-        # 字幕設定區域
-        subtitle_frame = ttk.LabelFrame(main_frame, text="字幕設定", padding="10")
-        subtitle_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        # 靜音閾值
+        ttk.Label(music_row, text="靜音:").pack(side=tk.LEFT)
+        self.no_speech_threshold = tk.DoubleVar(value=0.6)
+        ttk.Scale(music_row, from_=0.1, to=1.0, variable=self.no_speech_threshold, 
+                 orient=tk.HORIZONTAL, length=80).pack(side=tk.LEFT, padx=(2, 10))
+        
+        # 溫度
+        ttk.Label(music_row, text="溫度:").pack(side=tk.LEFT)
+        self.temperature = tk.DoubleVar(value=0.0)
+        ttk.Scale(music_row, from_=0.0, to=1.0, variable=self.temperature, 
+                 orient=tk.HORIZONTAL, length=80).pack(side=tk.LEFT, padx=(2, 0))
+        
+        # 第三行：進階優化選項 - 全部水平排列
+        advanced_row = ttk.Frame(self.whisper_frame)
+        advanced_row.grid(row=2, column=0, columnspan=6, sticky=(tk.W, tk.E), pady=(5, 5))
+        
+        # 優化選項
+        self.use_optimization = tk.BooleanVar(value=True)
+        ttk.Checkbutton(advanced_row, text="🧠 智能優化", 
+                       variable=self.use_optimization).pack(side=tk.LEFT, padx=(0, 10))
+        
+        self.multi_pass_mode = tk.BooleanVar(value=False)
+        ttk.Checkbutton(advanced_row, text="🔄 多次通過", 
+                       variable=self.multi_pass_mode).pack(side=tk.LEFT, padx=(0, 15))
+        
+        # 品質等級
+        ttk.Label(advanced_row, text="品質:").pack(side=tk.LEFT)
+        self.quality_level = tk.StringVar(value="auto")
+        quality_combo = ttk.Combobox(advanced_row, textvariable=self.quality_level,
+                                   values=["auto", "fast", "balanced", "high", "ultra"], 
+                                   state="readonly", width=8)
+        quality_combo.pack(side=tk.LEFT, padx=(5, 15))
+        
+        # 內容類型
+        ttk.Label(advanced_row, text="類型:").pack(side=tk.LEFT)
+        self.content_type = tk.StringVar(value="auto")
+        content_combo = ttk.Combobox(advanced_row, textvariable=self.content_type,
+                                   values=["auto", "speech", "music", "mixed"], 
+                                   state="readonly", width=8)
+        content_combo.pack(side=tk.LEFT, padx=5)
+        
+        # 模型說明 - 移到第四行
+        model_info = ttk.Label(self.whisper_frame, text="💡 模型: tiny(快) → base → small → medium(推薦) → large(準確)", 
+                              font=("Arial", 8), foreground="gray")
+        model_info.grid(row=3, column=0, columnspan=6, sticky=tk.W, pady=(5, 0))
+        
+        # 第四行：模型位置設定 - 水平排列
+        model_dir_row = ttk.Frame(self.whisper_frame)
+        model_dir_row.grid(row=4, column=0, columnspan=6, sticky=(tk.W, tk.E), pady=(5, 0))
+        
+        self.custom_model_check = ttk.Checkbutton(model_dir_row, text="自訂模型位置", 
+                                                 variable=self.use_custom_model_dir, 
+                                                 command=self.toggle_custom_model_dir)
+        self.custom_model_check.pack(side=tk.LEFT, padx=(0, 10))
+        
+        self.model_dir_entry = ttk.Entry(model_dir_row, textvariable=self.custom_model_dir, width=35, state="disabled")
+        self.model_dir_entry.pack(side=tk.LEFT, padx=(0, 5), fill=tk.X, expand=True)
+        
+        self.model_dir_btn = ttk.Button(model_dir_row, text="瀏覽", command=self.select_model_directory, state="disabled")
+        self.model_dir_btn.pack(side=tk.LEFT)
+        
+
+        
+        # 第五行：工具按鈕 - 水平排列，更緊湊
+        tools_row = ttk.Frame(self.whisper_frame)
+        tools_row.grid(row=5, column=0, columnspan=6, sticky=(tk.W, tk.E), pady=(8, 0))
+        
+        # 主要工具按鈕
+        ttk.Button(tools_row, text="📁 模型", command=self.check_downloaded_models).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(tools_row, text="🚀 GPU", command=self.check_gpu_availability).pack(side=tk.LEFT, padx=5)
+        ttk.Button(tools_row, text="⚙️ 設定", command=self.show_env_setup).pack(side=tk.LEFT, padx=5)
+        ttk.Button(tools_row, text="🎵 音樂幫助", command=self.show_music_help).pack(side=tk.LEFT, padx=5)
+        ttk.Button(tools_row, text="🧠 優化說明", command=self.show_optimization_help).pack(side=tk.LEFT, padx=5)
+        
+        # 字幕設定區域 - 更緊湊的水平佈局
+        subtitle_frame = ttk.LabelFrame(main_frame, text="字幕設定", padding="6")
+        subtitle_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(8, 5))
+        
+        # 水平排列所有設定
+        settings_row = ttk.Frame(subtitle_frame)
+        settings_row.pack(fill=tk.X)
         
         # 字體大小
-        ttk.Label(subtitle_frame, text="字體大小:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        ttk.Label(settings_row, text="字體大小:").pack(side=tk.LEFT)
         self.font_size = tk.IntVar(value=48)
-        font_size_spin = ttk.Spinbox(subtitle_frame, from_=20, to=100, textvariable=self.font_size, width=10)
-        font_size_spin.grid(row=0, column=1, sticky=tk.W, padx=5)
+        font_size_spin = ttk.Spinbox(settings_row, from_=20, to=100, textvariable=self.font_size, width=6)
+        font_size_spin.pack(side=tk.LEFT, padx=(5, 20))
         
         # 字幕位置
-        ttk.Label(subtitle_frame, text="底部邊距:").grid(row=0, column=2, sticky=tk.W, padx=(20, 5), pady=2)
+        ttk.Label(settings_row, text="底部邊距:").pack(side=tk.LEFT)
         self.margin = tk.IntVar(value=80)
-        margin_spin = ttk.Spinbox(subtitle_frame, from_=20, to=200, textvariable=self.margin, width=10)
-        margin_spin.grid(row=0, column=3, sticky=tk.W, padx=5)
+        margin_spin = ttk.Spinbox(settings_row, from_=20, to=200, textvariable=self.margin, width=6)
+        margin_spin.pack(side=tk.LEFT, padx=5)
         
-        # 控制按鈕區域
-        control_frame = ttk.Frame(main_frame)
-        control_frame.grid(row=5, column=0, columnspan=3, pady=20)
+        # 控制按鈕區域 - 更緊湊的佈局
+        control_frame = ttk.LabelFrame(main_frame, text="執行操作", padding="8")
+        control_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 8))
         
-        # 主要按鈕
-        self.generate_btn = ttk.Button(control_frame, text="1. 生成字幕 (Whisper)", 
-                                      command=self.generate_subtitles, style="Accent.TButton")
-        self.generate_btn.grid(row=0, column=0, padx=10)
+        # 使用水平佈局，四個按鈕一行
+        buttons_row = ttk.Frame(control_frame)
+        buttons_row.pack(fill=tk.X)
         
-        self.burn_btn = ttk.Button(control_frame, text="2. 燒錄字幕到影片", 
+        self.generate_btn = ttk.Button(buttons_row, text="🎤 生成字幕", 
+                                      command=self.generate_subtitles)
+        self.generate_btn.pack(side=tk.LEFT, padx=(0, 5), fill=tk.X, expand=True)
+        
+        self.burn_btn = ttk.Button(buttons_row, text="🔥 燒錄字幕", 
                                   command=self.burn_subtitles, state="disabled")
-        self.burn_btn.grid(row=0, column=1, padx=10)
+        self.burn_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         
-        self.all_in_one_btn = ttk.Button(control_frame, text="一鍵完成 (生成+燒錄)", 
-                                        command=self.process_all_in_one, style="Accent.TButton")
-        self.all_in_one_btn.grid(row=0, column=2, padx=10)
+        self.all_in_one_btn = ttk.Button(buttons_row, text="⚡ 一鍵完成", 
+                                        command=self.process_all_in_one)
+        self.all_in_one_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         
-        self.burn_only_btn = ttk.Button(control_frame, text="僅燒錄字幕", 
-                                       command=self.burn_subtitles, style="Accent.TButton")
-        self.burn_only_btn.grid(row=0, column=3, padx=10)
+        self.burn_only_btn = ttk.Button(buttons_row, text="📝 僅燒錄", 
+                                       command=self.burn_subtitles)
+        self.burn_only_btn.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
         
-        # 進度條
-        self.progress = ttk.Progressbar(main_frame, mode='indeterminate')
-        self.progress.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        # 進度條和狀態 - 更緊湊
+        progress_frame = ttk.Frame(main_frame)
+        progress_frame.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(5, 8))
         
-        # 狀態標籤
-        self.status_label = ttk.Label(main_frame, text="準備就緒", foreground="green")
-        self.status_label.grid(row=7, column=0, columnspan=3, pady=5)
+        self.progress = ttk.Progressbar(progress_frame, mode='indeterminate')
+        self.progress.pack(fill=tk.X, pady=(0, 3))
         
-        # 日誌區域
+        self.status_label = ttk.Label(progress_frame, text="準備就緒", foreground="green")
+        self.status_label.pack()
+        
+        # 日誌區域 - 減少高度
         log_frame = ttk.LabelFrame(main_frame, text="處理日誌", padding="5")
-        log_frame.grid(row=8, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        log_frame.grid(row=7, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(5, 5))
         
-        self.log_text = tk.Text(log_frame, height=10, wrap=tk.WORD)
+        self.log_text = tk.Text(log_frame, height=6, wrap=tk.WORD, font=("Consolas", 9))
         log_scroll = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=log_scroll.set)
         
@@ -215,9 +317,8 @@ class WhisperSubtitleGUI:
         
         # 設定網格權重
         main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(8, weight=1)
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
+        main_frame.rowconfigure(7, weight=1)  # 調整為日誌區域的新行號
+        scrollable_frame.columnconfigure(0, weight=1)
         
         # 初始化 UI 模式
         self.update_ui_mode()
@@ -238,6 +339,10 @@ class WhisperSubtitleGUI:
                     self.operation_mode.set(config.get("operation_mode", "generate_and_burn"))
                     self.use_gpu.set(config.get("use_gpu", True))
                     self.device.set(config.get("device", "auto"))
+                    self.use_optimization.set(config.get("use_optimization", True))
+                    self.multi_pass_mode.set(config.get("multi_pass_mode", False))
+                    self.quality_level.set(config.get("quality_level", "auto"))
+                    self.content_type.set(config.get("content_type", "auto"))
                     self.toggle_audio_input()  # 更新界面狀態
                     self.toggle_custom_model_dir()  # 更新模型目錄界面狀態
                     self.toggle_gpu_settings()  # 更新 GPU 界面狀態
@@ -258,7 +363,11 @@ class WhisperSubtitleGUI:
                 "custom_model_dir": self.custom_model_dir.get(),
                 "operation_mode": self.operation_mode.get(),
                 "use_gpu": self.use_gpu.get(),
-                "device": self.device.get()
+                "device": self.device.get(),
+                "use_optimization": self.use_optimization.get(),
+                "multi_pass_mode": self.multi_pass_mode.get(),
+                "quality_level": self.quality_level.get(),
+                "content_type": self.content_type.get()
             }
             with open("whisper_config.json", 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
@@ -550,10 +659,8 @@ class WhisperSubtitleGUI:
         """切換 GPU 設定"""
         if self.use_gpu.get():
             self.device.set("auto")
-            self.gpu_info_label.config(text="將自動偵測最佳設備")
         else:
             self.device.set("cpu")
-            self.gpu_info_label.config(text="使用 CPU 處理 (較慢)")
     
     def check_gpu_availability(self):
         """檢查 GPU 可用性"""
@@ -615,6 +722,19 @@ class WhisperSubtitleGUI:
         text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     
+    def toggle_music_mode(self):
+        """切換音樂模式設定"""
+        if self.music_mode.get():
+            # 音樂模式：調整參數以更好識別歌曲
+            self.no_speech_threshold.set(0.3)  # 降低靜音閾值
+            self.temperature.set(0.2)  # 增加一點隨機性
+            self.log("🎵 已啟用音樂模式，調整參數以更好識別歌曲")
+        else:
+            # 一般模式：恢復預設值
+            self.no_speech_threshold.set(0.6)
+            self.temperature.set(0.0)
+            self.log("💬 已切換到一般語音模式")
+    
     def update_ui_mode(self):
         """根據操作模式更新 UI"""
         mode = self.operation_mode.get()
@@ -634,10 +754,10 @@ class WhisperSubtitleGUI:
                 self.audio_btn.grid()
             
             # 按鈕狀態
-            self.generate_btn.grid()
-            self.burn_btn.grid()
-            self.all_in_one_btn.grid()
-            self.burn_only_btn.grid_remove()
+            self.generate_btn.pack(side=tk.LEFT, padx=(0, 5), fill=tk.X, expand=True)
+            self.burn_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+            self.all_in_one_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+            self.burn_only_btn.pack_forget()
             
             self.log("模式: 生成字幕 + 燒錄影片")
             
@@ -655,10 +775,10 @@ class WhisperSubtitleGUI:
             self.audio_btn.grid_remove()
             
             # 按鈕狀態
-            self.generate_btn.grid_remove()
-            self.burn_btn.grid_remove()
-            self.all_in_one_btn.grid_remove()
-            self.burn_only_btn.grid()
+            self.generate_btn.pack_forget()
+            self.burn_btn.pack_forget()
+            self.all_in_one_btn.pack_forget()
+            self.burn_only_btn.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
             
             self.log("模式: 僅燒錄現有字幕到影片")
     
@@ -917,13 +1037,32 @@ class WhisperSubtitleGUI:
                 if self.language.get() != "auto":
                     cmd.extend(["--language", self.language.get()])
                 
+                # 添加進階選項
+                cmd.extend([
+                    "--no_speech_threshold", str(self.no_speech_threshold.get()),
+                    "--temperature", str(self.temperature.get()),
+                    "--condition_on_previous_text", "False"  # 避免重複內容
+                ])
+                
+                # 音樂模式的特殊設定
+                if self.music_mode.get():
+                    cmd.extend([
+                        "--compression_ratio_threshold", "2.8",  # 放寬壓縮比限制
+                        "--logprob_threshold", "-1.5",  # 放寬機率閾值
+                        "--best_of", "3"  # 增加候選數量
+                    ])
+                    self.log("🎵 音樂模式：使用特殊參數優化歌曲識別")
+                
                 # 如果使用音訊檔案，添加額外的精確度選項
                 if self.use_audio_file.get():
                     cmd.extend([
                         "--word_timestamps", "True",  # 詞級時間戳
-                        "--condition_on_previous_text", "True"  # 基於前文的條件生成
                     ])
                     self.log("🎵 使用音訊檔案模式，啟用高精度選項")
+                
+                self.log(f"🔧 靜音閾值: {self.no_speech_threshold.get()}")
+                self.log(f"🔧 溫度: {self.temperature.get()}")
+                self.log(f"🔧 過濾重複: {self.filter_repetitive.get()}")
                 
                 self.log(f"⚙️ 執行命令: {' '.join(cmd)}")
                 self.log("-" * 50)
@@ -1051,7 +1190,11 @@ class WhisperSubtitleGUI:
                 if not srt_found:
                     self.log("⚠️ 命令行未生成字幕檔案，嘗試使用 Python API...")
                     try:
-                        success = self.run_whisper_python_api(input_file, self.output_srt_path.get())
+                        if self.use_optimization.get():
+                            success = self.run_whisper_python_api(input_file, self.output_srt_path.get())
+                        else:
+                            success = self.run_basic_whisper_api(input_file, self.output_srt_path.get())
+                        
                         if success:
                             process.returncode = 0  # 標記為成功
                             srt_found = True
@@ -1126,7 +1269,7 @@ class WhisperSubtitleGUI:
         thread.start()
     
     def run_whisper_python_api(self, input_file: str, output_srt: str) -> bool:
-        """使用 Python API 直接調用 Whisper"""
+        """使用 Python API 直接調用 Whisper（優化版本）"""
         try:
             # 抑制 Whisper 警告
             import warnings
@@ -1134,8 +1277,48 @@ class WhisperSubtitleGUI:
             warnings.filterwarnings("ignore", message=".*falling back to a slower.*")
             
             import whisper
+            from whisper_accuracy_optimizer import WhisperAccuracyOptimizer
             
-            self.log("🐍 使用 Python API 調用 Whisper...")
+            self.log("🐍 使用優化版 Python API 調用 Whisper...")
+            
+            # 初始化優化器
+            optimizer = WhisperAccuracyOptimizer()
+            
+            # 決定內容類型
+            if self.content_type.get() == "auto":
+                content_type = "music" if self.music_mode.get() else "speech"
+            else:
+                content_type = self.content_type.get()
+            
+            language = self.language.get() if self.language.get() != "auto" else "auto"
+            
+            # 決定品質等級
+            if self.quality_level.get() == "auto":
+                # 根據模型大小自動決定品質等級
+                quality_map = {
+                    "tiny": "fast",
+                    "base": "balanced", 
+                    "small": "balanced",
+                    "medium": "high",
+                    "large": "ultra"
+                }
+                quality_level = quality_map.get(self.whisper_model.get(), "high")
+            else:
+                quality_level = self.quality_level.get()
+            
+            self.log(f"🎯 內容類型: {content_type}, 語言: {language}, 品質等級: {quality_level}")
+            
+            # 獲取優化參數
+            optimized_params = optimizer.optimize_whisper_params(
+                content_type=content_type,
+                language=language,
+                quality_level=quality_level
+            )
+            
+            self.log("⚙️ 使用優化參數:")
+            for key, value in optimized_params.items():
+                if key != "temperature":  # temperature 會特別處理
+                    self.log(f"   {key}: {value}")
             
             # 決定使用的設備
             device = "cpu"
@@ -1160,27 +1343,42 @@ class WhisperSubtitleGUI:
                 model = whisper.load_model(self.whisper_model.get(), device=device)
             self.log(f"✅ 模型 {self.whisper_model.get()} 載入成功 (設備: {device})")
             
-            # 轉錄音訊
-            self.set_status("正在轉錄音訊...", "blue")
+            # 根據設定決定是否使用多次通過轉錄
+            if self.multi_pass_mode.get():
+                self.set_status("正在執行多次通過轉錄...", "blue")
+                result = optimizer.multi_pass_transcription(
+                    model=model,
+                    audio_file=input_file,
+                    params=optimized_params,
+                    language=language
+                )
+                self.log("✅ 多次通過轉錄完成")
+            else:
+                self.set_status("正在執行單次轉錄...", "blue")
+                # 使用優化參數進行單次轉錄
+                whisper_params = {k: v for k, v in optimized_params.items() 
+                                if k not in ["temperature"]}
+                temperature = optimized_params.get("temperature", [0.0])
+                if isinstance(temperature, list):
+                    temperature = temperature[0]  # 使用第一個溫度值
+                
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    result = model.transcribe(
+                        input_file,
+                        temperature=temperature,
+                        **whisper_params
+                    )
+                self.log("✅ 單次轉錄完成")
             
-            # 設定轉錄選項
-            options = {
-                "language": self.language.get() if self.language.get() != "auto" else None,
-                "task": "transcribe"
-            }
-            
-            if self.use_audio_file.get():
-                options["word_timestamps"] = True
-            
-            # 執行轉錄並抑制警告
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                result = model.transcribe(input_file, **options)
-            self.log("✅ 音訊轉錄完成")
-            
-            # 生成 SRT 格式
-            self.set_status("正在生成 SRT 字幕...", "blue")
-            srt_content = self.generate_srt_from_result(result)
+            # 使用優化的 SRT 生成
+            self.set_status("正在生成優化的 SRT 字幕...", "blue")
+            srt_content = optimizer.generate_optimized_srt(
+                result=result,
+                language=language,
+                filter_repetitive=self.filter_repetitive.get(),
+                merge_short_segments=True
+            )
             
             # 寫入檔案
             with open(output_srt, 'w', encoding='utf-8') as f:
@@ -1190,37 +1388,187 @@ class WhisperSubtitleGUI:
             if os.path.exists(output_srt):
                 file_size = os.path.getsize(output_srt)
                 subtitle_count = srt_content.count('-->')
-                self.log(f"✅ SRT 檔案已生成: {output_srt}")
-                self.log(f"📊 檔案大小: {file_size} bytes, 字幕片段: {subtitle_count} 個")
+                original_count = len(result.get("segments", []))
+                
+                self.log(f"✅ 優化的 SRT 檔案已生成: {output_srt}")
+                self.log(f"📊 檔案大小: {file_size} bytes")
+                self.log(f"📊 原始片段: {original_count}, 優化後: {subtitle_count}")
+                
+                if original_count > 0:
+                    reduction_rate = (original_count - subtitle_count) / original_count * 100
+                    self.log(f"📊 優化率: {reduction_rate:.1f}% (移除了 {original_count - subtitle_count} 個低品質片段)")
+                
+                # 保存優化報告
+                try:
+                    quality_scores = []
+                    for segment in result.get("segments", []):
+                        if "avg_logprob" in segment:
+                            quality_scores.append(max(0, min(1, (segment["avg_logprob"] + 3) / 3)))
+                    
+                    optimizer.save_optimization_report(
+                        original_segments=original_count,
+                        final_segments=subtitle_count,
+                        quality_scores=quality_scores,
+                        output_path=output_srt
+                    )
+                except Exception as e:
+                    self.log(f"⚠️ 保存優化報告失敗: {e}")
                 
                 if subtitle_count > 0:
-                    self.set_status("✅ Python API 字幕生成完成！", "green")
+                    self.set_status("✅ 優化版 Python API 字幕生成完成！", "green")
                     return True
                 else:
-                    self.log("⚠️ 字幕檔案為空")
+                    self.log("⚠️ 優化後字幕檔案為空，可能需要調整過濾參數")
                     return False
             else:
                 self.log("❌ 檔案寫入失敗")
                 return False
             
         except Exception as e:
-            self.log(f"❌ Python API 執行失敗: {e}")
+            self.log(f"❌ 優化版 Python API 執行失敗: {e}")
+            # 如果優化版失敗，回退到基本版本
+            self.log("🔄 回退到基本版本...")
+            return self.run_basic_whisper_api(input_file, output_srt)
+    
+    def run_basic_whisper_api(self, input_file: str, output_srt: str) -> bool:
+        """基本版本的 Whisper API（作為備用方案）"""
+        try:
+            import warnings
+            warnings.filterwarnings("ignore", message=".*Failed to launch Triton kernels.*")
+            warnings.filterwarnings("ignore", message=".*falling back to a slower.*")
+            
+            import whisper
+            
+            self.log("🔄 使用基本版 Python API...")
+            
+            # 決定使用的設備
+            device = "cpu"
+            if self.use_gpu.get():
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        device = "cuda"
+                except ImportError:
+                    pass
+            
+            # 載入模型
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                model = whisper.load_model(self.whisper_model.get(), device=device)
+            
+            # 基本轉錄選項
+            options = {
+                "language": self.language.get() if self.language.get() != "auto" else None,
+                "task": "transcribe",
+                "no_speech_threshold": self.no_speech_threshold.get(),
+                "temperature": self.temperature.get(),
+                "condition_on_previous_text": False,
+            }
+            
+            # 執行轉錄
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                result = model.transcribe(input_file, **options)
+            
+            # 生成基本 SRT
+            srt_content = self.generate_srt_from_result(result)
+            
+            # 寫入檔案
+            with open(output_srt, 'w', encoding='utf-8') as f:
+                f.write(srt_content)
+            
+            if os.path.exists(output_srt):
+                subtitle_count = srt_content.count('-->')
+                self.log(f"✅ 基本版 SRT 檔案已生成，字幕片段: {subtitle_count} 個")
+                return subtitle_count > 0
+            
+            return False
+            
+        except Exception as e:
+            self.log(f"❌ 基本版 API 也失敗: {e}")
             return False
     
     def generate_srt_from_result(self, result) -> str:
         """從 Whisper 結果生成 SRT 格式"""
         srt_content = ""
+        filtered_segments = []
         
-        for i, segment in enumerate(result["segments"], 1):
+        # 過濾重複和無意義的內容
+        for segment in result["segments"]:
+            text = segment["text"].strip()
+            
+            # 跳過空白或太短的內容
+            if len(text) < 2:
+                continue
+            
+            # 過濾重複內容
+            if self.filter_repetitive.get():
+                # 檢查是否與前面的內容重複
+                is_repetitive = False
+                for prev_segment in filtered_segments[-3:]:  # 檢查最近3個片段
+                    if self.is_similar_text(text, prev_segment["text"]):
+                        is_repetitive = True
+                        break
+                
+                if is_repetitive:
+                    self.log(f"⚠️ 跳過重複內容: {text[:30]}...")
+                    continue
+            
+            # 過濾常見的無意義內容
+            meaningless_patterns = [
+                "作詞・作曲・編曲",
+                "初音ミク",
+                "♪",
+                "...",
+                "---",
+                "字幕",
+                "subtitle"
+            ]
+            
+            is_meaningless = any(pattern in text for pattern in meaningless_patterns)
+            if is_meaningless and len(text) < 20:  # 短且包含無意義內容
+                self.log(f"⚠️ 跳過無意義內容: {text}")
+                continue
+            
+            filtered_segments.append({
+                "start": segment["start"],
+                "end": segment["end"],
+                "text": text
+            })
+        
+        # 生成 SRT 內容
+        for i, segment in enumerate(filtered_segments, 1):
             start_time = self.seconds_to_srt_time(segment["start"])
             end_time = self.seconds_to_srt_time(segment["end"])
-            text = segment["text"].strip()
+            text = segment["text"]
             
             srt_content += f"{i}\n"
             srt_content += f"{start_time} --> {end_time}\n"
             srt_content += f"{text}\n\n"
         
+        self.log(f"📊 原始片段: {len(result['segments'])}, 過濾後: {len(filtered_segments)}")
         return srt_content
+    
+    def is_similar_text(self, text1: str, text2: str, threshold: float = 0.8) -> bool:
+        """檢查兩個文字是否相似"""
+        # 簡單的相似度檢查
+        if text1 == text2:
+            return True
+        
+        # 檢查包含關係
+        if len(text1) > 10 and len(text2) > 10:
+            if text1 in text2 or text2 in text1:
+                return True
+        
+        # 檢查字符重疊度
+        set1 = set(text1.lower())
+        set2 = set(text2.lower())
+        if len(set1) > 0 and len(set2) > 0:
+            overlap = len(set1.intersection(set2))
+            similarity = overlap / max(len(set1), len(set2))
+            return similarity > threshold
+        
+        return False
     
     def seconds_to_srt_time(self, seconds: float) -> str:
         """將秒數轉換為 SRT 時間格式"""
@@ -1393,6 +1741,110 @@ class WhisperSubtitleGUI:
         # 儲存設定
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.root.mainloop()
+    
+    def show_music_help(self):
+        """顯示音樂識別幫助"""
+        try:
+            # 檢查是否存在音樂故障排除指南
+            if os.path.exists("music_troubleshooting.md"):
+                with open("music_troubleshooting.md", 'r', encoding='utf-8') as f:
+                    help_content = f.read()
+            else:
+                help_content = """音樂識別幫助指南
+
+🎵 音樂模式設定：
+• 啟用「音樂模式」可以優化歌曲識別
+• 降低「靜音閾值」到 0.3-0.4
+• 適當提高「溫度」到 0.2-0.3
+
+🔧 參數調整建議：
+• 使用 medium 或 large 模型獲得更好效果
+• 啟用「過濾重複內容」避免歌詞重複
+• 使用高品質 WAV 音訊檔案
+
+⚠️ 常見問題：
+• 歌詞識別不完整 → 降低靜音閾值
+• 出現重複內容 → 啟用過濾功能
+• 識別語言錯誤 → 手動指定語言
+
+💡 最佳實踐：
+• 先用小模型測試，確認參數後再用大模型
+• 對於複雜歌曲，可以嘗試多個溫度設定
+• 使用字幕編輯器進行後期調整"""
+            
+            # 建立幫助視窗
+            help_window = tk.Toplevel(self.root)
+            help_window.title("音樂識別幫助")
+            help_window.geometry("600x500")
+            
+            text_widget = tk.Text(help_window, wrap=tk.WORD, padx=10, pady=10)
+            text_widget.insert(1.0, help_content)
+            text_widget.config(state=tk.DISABLED)
+            
+            scrollbar = ttk.Scrollbar(help_window, orient=tk.VERTICAL, command=text_widget.yview)
+            text_widget.configure(yscrollcommand=scrollbar.set)
+            
+            text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+        except Exception as e:
+            messagebox.showerror("錯誤", f"無法顯示幫助: {e}")
+    
+    def show_optimization_help(self):
+        """顯示優化功能說明"""
+        help_content = """🚀 Whisper 智能優化功能說明
+
+✨ 智能優化 (推薦開啟)：
+• 自動調整識別參數以提高準確度
+• 智能過濾重複和無意義內容
+• 根據內容類型優化處理策略
+• 生成詳細的優化報告
+
+🔄 多次通過模式：
+• 使用多個溫度值進行轉錄
+• 自動選擇品質最佳的結果
+• 提高準確度但增加處理時間
+• 適合重要內容的精確轉錄
+
+📊 品質等級設定：
+• auto: 根據模型自動選擇
+• fast: 快速模式，適合預覽
+• balanced: 平衡模式，日常使用
+• high: 高品質模式，推薦設定
+• ultra: 超高品質，最佳準確度
+
+🎯 內容類型設定：
+• auto: 根據音樂模式自動判斷
+• speech: 語音內容優化
+• music: 音樂/歌曲內容優化
+• mixed: 混合內容處理
+
+💡 使用建議：
+• 首次使用建議開啟智能優化
+• 對於重要內容可啟用多次通過模式
+• 根據內容特性選擇合適的類型
+• 查看優化報告了解處理效果
+
+⚠️ 注意事項：
+• 優化功能會增加處理時間
+• 多次通過模式需要更多計算資源
+• 優化報告會保存在字幕檔案旁邊
+• 如果優化失敗會自動回退到基本模式"""
+        
+        # 建立說明視窗
+        help_window = tk.Toplevel(self.root)
+        help_window.title("優化功能說明")
+        help_window.geometry("700x600")
+        
+        text_widget = tk.Text(help_window, wrap=tk.WORD, padx=10, pady=10)
+        text_widget.insert(1.0, help_content)
+        text_widget.config(state=tk.DISABLED)
+        
+        scrollbar = ttk.Scrollbar(help_window, orient=tk.VERTICAL, command=text_widget.yview)
+        text_widget.configure(yscrollcommand=scrollbar.set)
+        
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     
     def on_closing(self):
         """關閉程式時的處理"""
