@@ -61,7 +61,7 @@ NotoSansCJK-Regular.ttc
 *sub*.mp4
 字幕*.srt
 
-# 設定檔案 (包含 API Key 或個人設定)
+# 設定檔案 (包含個人設定，但保留模板)
 whisper_config.json
 
 # 測試用的歌詞和音訊檔案

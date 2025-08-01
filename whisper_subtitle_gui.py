@@ -10,6 +10,22 @@ import json
 import time
 import warnings
 from pathlib import Path
+import sys
+
+# 設定 Python 編碼環境
+if sys.platform.startswith('win'):
+    # Windows 環境下設定編碼
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    os.environ['PYTHONUTF8'] = '1'
+    # 設定控制台編碼
+    try:
+        import locale
+        locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+    except:
+        try:
+            locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+        except:
+            pass  # 如果都失敗就使用預設
 
 # 抑制 Whisper 的 Triton 警告
 warnings.filterwarnings("ignore", message=".*Failed to launch Triton kernels.*")
@@ -967,6 +983,27 @@ class WhisperSubtitleGUI:
                 file_size = os.path.getsize(input_file) / (1024 * 1024)  # MB
                 self.log(f"📊 檔案大小: {file_size:.1f} MB")
                 
+                # 檢查路徑是否包含中文字符，如果是則直接使用 Python API
+                has_chinese_chars = any(ord(c) > 127 for c in input_file) or any(ord(c) > 127 for c in self.output_srt_path.get())
+                if has_chinese_chars and sys.platform.startswith('win'):
+                    self.log("🔧 偵測到中文路徑，直接使用 Python API 避免編碼問題")
+                    try:
+                        if self.use_optimization.get():
+                            success = self.run_whisper_python_api(input_file, self.output_srt_path.get())
+                        else:
+                            success = self.run_basic_whisper_api(input_file, self.output_srt_path.get())
+                        
+                        if success:
+                            self.set_status("✅ 字幕生成完成！", "green")
+                            self.log("🎉 字幕生成成功完成！")
+                        else:
+                            self.set_status("❌ 字幕生成失敗", "red")
+                            self.log("❌ 字幕生成失敗")
+                        return
+                    except Exception as e:
+                        self.log(f"❌ Python API 失敗: {e}")
+                        self.log("🔄 回退到命令行模式...")
+                
                 # 設定環境變數（如果使用自訂模型位置）
                 env = os.environ.copy()
                 if self.use_custom_model_dir.get() and self.custom_model_dir.get():
@@ -1001,12 +1038,32 @@ class WhisperSubtitleGUI:
                 
                 # 建立 Whisper 命令
                 self.set_status("準備 Whisper 命令...", "blue")
+                
+                # 處理包含中文字符的路徑
+                safe_input_file = input_file
+                safe_output_dir = str(Path(self.output_srt_path.get()).parent)
+                
+                # 在 Windows 上，如果路徑包含中文字符，使用短路徑名稱
+                if sys.platform.startswith('win'):
+                    try:
+                        import win32api
+                        if any(ord(c) > 127 for c in input_file):
+                            safe_input_file = win32api.GetShortPathName(input_file)
+                            self.log(f"🔧 使用短路徑名稱: {safe_input_file}")
+                        if any(ord(c) > 127 for c in safe_output_dir):
+                            safe_output_dir = win32api.GetShortPathName(safe_output_dir)
+                            self.log(f"🔧 使用短輸出目錄: {safe_output_dir}")
+                    except ImportError:
+                        self.log("⚠️ win32api 未安裝，無法使用短路徑名稱")
+                    except Exception as e:
+                        self.log(f"⚠️ 獲取短路徑名稱失敗: {e}")
+                
                 cmd = [
                     "whisper",
-                    input_file,
+                    safe_input_file,
                     "--model", self.whisper_model.get(),
                     "--output_format", "srt",
-                    "--output_dir", str(Path(self.output_srt_path.get()).parent),
+                    "--output_dir", safe_output_dir,
                     "--verbose", "True"
                 ]
                 
@@ -1070,6 +1127,10 @@ class WhisperSubtitleGUI:
                 # 執行 Whisper
                 self.set_status("正在執行 Whisper 語音識別...", "blue")
                 self.log("🚀 開始語音識別處理...")
+                
+                # 設定環境變數以解決編碼問題
+                env['PYTHONIOENCODING'] = 'utf-8'
+                env['PYTHONUTF8'] = '1'
                 
                 # 嘗試不同的執行方式和編碼
                 try:
@@ -1141,10 +1202,22 @@ class WhisperSubtitleGUI:
                                         self.set_status("正在寫入字幕檔案...", "blue")
                                     elif "100%" in line:
                                         self.set_status("處理完成，正在生成字幕...", "blue")
+                                    elif "UnicodeEncodeError" in line:
+                                        self.log("⚠️ 偵測到編碼錯誤，但處理將繼續...")
+                                        self.log("💡 建議: 將檔案移至不含中文字符的路徑")
+                                    elif "Skipping" in line and "due to" in line:
+                                        self.log("⚠️ Whisper 跳過了某些內容，但處理將繼續...")
                                     
                                     last_progress_time = time.time()
                             except UnicodeDecodeError as e:
-                                self.log(f"⚠️ 編碼錯誤，跳過此行: {e}")
+                                # 嘗試使用不同編碼解碼
+                                try:
+                                    line_bytes = line.encode('cp950', errors='ignore')
+                                    line = line_bytes.decode('utf-8', errors='replace')
+                                    output_lines.append(line)
+                                    self.log(f"🔧 編碼修正: {line}")
+                                except:
+                                    self.log(f"⚠️ 編碼錯誤，跳過此行: {e}")
                                 continue
                             except Exception as e:
                                 self.log(f"⚠️ 處理輸出時出錯: {e}")
