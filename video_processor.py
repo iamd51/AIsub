@@ -12,8 +12,11 @@ from PIL import Image, ImageDraw, ImageFont
 import urllib.request
 
 class VideoProcessor:
-    def __init__(self, config_path: str = "config.json"):
+    def __init__(self, config_path: str = None):
         """初始化影片處理器"""
+        if config_path is None:
+            # 使用與腳本同目錄的預設配置檔案
+            config_path = os.path.join(os.path.dirname(__file__), "config.json")
         self.config = self.load_config(config_path)
         self.font = self.load_japanese_font()
     
@@ -24,12 +27,27 @@ class VideoProcessor:
                 config = json.load(f)
             return config
         except FileNotFoundError:
-            print(f"設定檔 {config_path} 不存在")
-            sys.exit(1)
+            print(f"設定檔 {config_path} 不存在，使用預設設定")
+            # 返回預設配置而不是退出程式
+            return {
+                "subtitle_settings": {
+                    "font_size": 48,
+                    "margin": 80
+                }
+            }
+        except Exception as e:
+            print(f"載入設定檔失敗: {e}，使用預設設定")
+            return {
+                "subtitle_settings": {
+                    "font_size": 48,
+                    "margin": 80
+                }
+            }
     
     def load_japanese_font(self):
         """載入支援日文的字體"""
-        font_path = "NotoSansCJK-Regular.ttc"
+        # 使用相對路徑，確保在專案目錄中尋找
+        font_path = os.path.join(os.path.dirname(__file__), "NotoSansCJK-Regular.ttc")
         
         # 如果字體檔案不存在，嘗試下載
         if not os.path.exists(font_path):
@@ -42,19 +60,39 @@ class VideoProcessor:
             except Exception as e:
                 print(f"字體下載失敗: {e}")
                 print("將使用系統預設字體")
+                # 如果下載失敗，嘗試使用系統字體
+                return self.get_system_font()
                 return None
         
         try:
-            font_size = self.config["subtitle_settings"]["font_size"]
+            font_size = self.config.get("subtitle_settings", {}).get("font_size", 48)
             return ImageFont.truetype(font_path, font_size)
         except Exception as e:
             print(f"載入字體失敗: {e}")
+            return self.get_system_font()
+    
+    def get_system_font(self):
+        """獲取系統字體作為備用方案"""
+        font_size = self.config.get("subtitle_settings", {}).get("font_size", 48)
+        
+        # Windows 系統字體列表
+        windows_fonts = [
+            "msgothic.ttc",  # MS Gothic (支援日文)
+            "msyh.ttc",      # Microsoft YaHei (支援中文)
+            "arial.ttf",     # Arial
+            "calibri.ttf"    # Calibri
+        ]
+        
+        # 嘗試載入系統字體
+        for font_name in windows_fonts:
             try:
-                # 嘗試使用系統字體
-                return ImageFont.truetype("msgothic.ttc", self.config["subtitle_settings"]["font_size"])
+                return ImageFont.truetype(font_name, font_size)
             except:
-                print("使用預設字體")
-                return ImageFont.load_default()
+                continue
+        
+        # 如果都失敗，使用預設字體
+        print("使用預設字體")
+        return ImageFont.load_default()
     
     def parse_srt_file(self, srt_path: str) -> List[Dict]:
         """解析 SRT 字幕檔案"""
@@ -204,7 +242,7 @@ class VideoProcessor:
                 output_path,
                 codec='libx264',
                 audio_codec='aac',
-                temp_audiofile='temp-audio.m4a',
+                temp_audiofile=None,  # 讓 moviepy 自動處理臨時檔案
                 remove_temp=True,
                 bitrate='8000k',  # 高位元率保持品質
                 ffmpeg_params=['-crf', '18']  # 高品質設定
@@ -226,7 +264,7 @@ def main():
     parser.add_argument("--video", "-v", required=True, help="原始影片檔案")
     parser.add_argument("--srt", "-s", required=True, help="SRT 字幕檔案")
     parser.add_argument("--output", "-o", required=True, help="輸出影片檔案")
-    parser.add_argument("--config", "-c", default="config.json", help="設定檔路徑")
+    parser.add_argument("--config", "-c", default=None, help="設定檔路徑")
     
     args = parser.parse_args()
     

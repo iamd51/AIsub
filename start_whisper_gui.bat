@@ -7,6 +7,10 @@ echo    Whisper 字幕生成器啟動中...
 echo ================================
 echo.
 
+REM 設定環境變數以解決編碼問題
+set PYTHONIOENCODING=utf-8
+set PYTHONUTF8=1
+
 REM 檢查 Python 是否安裝
 python --version >nul 2>&1
 if errorlevel 1 (

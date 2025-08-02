@@ -1,4 +1,24 @@
-# Python
+# ========================================
+# Whisper 字幕生成器 - .gitignore
+# 
+# 此檔案確保使用者下載專案後能在任何 Windows 電腦上執行
+# 
+# 核心檔案 (必須保留):
+# - whisper_subtitle_gui.py (主程式)
+# - video_processor.py (影片處理)
+# - subtitle_editor.py (字幕編輯)
+# - install_whisper.bat (安裝腳本)
+# - start_whisper_gui.bat (啟動腳本)
+# - check_installation.bat (檢查腳本)
+# - check_installation.py (檢查程式)
+# - requirements.txt (依賴清單)
+# - whisper_config.json.template (配置模板)
+# - README.md (使用說明)
+# ========================================
+
+# ========================================
+# Python 相關檔案
+# ========================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -21,62 +41,129 @@ wheels/
 *.egg
 MANIFEST
 
-# Virtual Environment
+# ========================================
+# 虛擬環境 (保持乾淨的專案結構)
+# ========================================
 venv/
 env/
 ENV/
+.venv/
 
-# IDE
+# ========================================
+# IDE 和編輯器檔案
+# ========================================
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# OS
+# ========================================
+# 作業系統檔案
+# ========================================
 .DS_Store
 Thumbs.db
+desktop.ini
+*.lnk
 
-# 臨時檔案
+# ========================================
+# 臨時和快取檔案
+# ========================================
 temp_*.wav
 temp_*.mp4
 temp_*.srt
 temp_config.json
 extracted_audio.wav
 chunk_*.wav
+*.tmp
+*.temp
 
-# 模型檔案 (太大不適合上傳)
+# ========================================
+# Whisper 模型檔案 (太大，使用者需自行下載)
+# ========================================
 *.pt
 *.bin
 ggml-*.bin
 large-v3.pt
+medium.pt
+small.pt
+base.pt
+tiny.pt
 
-# 字體檔案 (太大)
+# ========================================
+# 字體檔案 (太大，程式會自動下載)
+# ========================================
 *.ttc
 *.ttf
 NotoSansCJK-Regular.ttc
+NotoSans*.ttc
+*.otf
 
-# 輸出檔案
+# ========================================
+# 使用者輸出檔案
+# ========================================
 *_whisper.srt
 *_with_subs.mp4
+*_subtitled.mp4
 *sub*.mp4
 字幕*.srt
+output_*.mp4
+output_*.srt
 
-# 設定檔案 (包含個人設定，但保留模板)
+# ========================================
+# 使用者設定檔案 (保留模板，忽略個人設定)
+# ========================================
 whisper_config.json
+config.json
+user_config.json
 
-# 測試用的歌詞和音訊檔案
-歌詞.txt
-temp_audio.wav
+# 但保留配置模板檔案
+!whisper_config.json.template
+!config.json.template
 
-# 日誌檔案
+# ========================================
+# 測試和開發檔案
+# ========================================
+test_*.py
+test_*.mp4
+test_*.wav
+test_*.srt
+demo_*.py
+verify_*.py
+sample_*.mp4
+sample_*.wav
+
+# 但保留重要的核心檔案
+!whisper_subtitle_gui.py
+!video_processor.py
+!subtitle_editor.py
+!check_installation.py
+!whisper_accuracy_optimizer.py
+
+# ========================================
+# 日誌和除錯檔案
+# ========================================
 *.log
+debug.txt
+error.txt
+whisper.log
 
-# 開發用批次檔案
+# ========================================
+# 開發用批次檔案和工具 (忽略非核心檔案)
+# ========================================
 check_gpu.bat
 move_whisper_models.bat
 start_optimized_gui.bat
+find_whisper_models.py
 
-# 開發文件和摘要 (保留主要文件)
+# 但保留核心批次檔案
+!install_whisper.bat
+!start_whisper_gui.bat
+!check_installation.bat
+
+# ========================================
+# 開發文件和摘要 (忽略開發過程文件，保留使用者文件)
+# ========================================
 *_SUMMARY.md
 *_UPDATE_SUMMARY.md
 COMPLETE_UPDATE_SUMMARY.md
@@ -87,13 +174,76 @@ OPTIMIZATION_UPDATE_SUMMARY.md
 SUCCESS_SUMMARY.md
 music_troubleshooting.md
 
-# 工具腳本
-find_whisper_models.py
+# 但保留重要的使用者文件
+!README.md
+!WHISPER_README.md
+!WHISPER_OPTIMIZATION_GUIDE.md
+!GPU_ACCELERATION.md
+!RELEASE_NOTES_*.md
+!LICENSE
 
-# 測試檔案
-test_*.py
-test_*.mp4
-test_*.wav
-test_*.srt
-demo_*.py
-verify_*.py
+# ========================================
+# 使用者上傳的媒體檔案 (避免意外提交大檔案)
+# ========================================
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.wmv
+*.flv
+*.webm
+*.m4v
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.aac
+*.ogg
+
+# 但保留小的範例檔案 (如果有的話)
+!example_*.mp4
+!sample_*.wav
+!demo_*.mp3
+# 注意：如果範例檔案超過 100MB，GitHub 會拒絕推送
+
+# ========================================
+# 使用者資料和快取
+# ========================================
+user_data/
+cache/
+downloads/
+models/
+.cache/
+
+# ========================================
+# Windows 特定檔案
+# ========================================
+*.exe
+*.msi
+*.dll
+*.pdb
+
+# ========================================
+# 備份檔案
+# ========================================
+*.bak
+*.backup
+*~
+*.orig
+
+# ========================================
+# 確保核心檔案不被忽略 (最終檢查)
+# ========================================
+# 如果上述規則意外忽略了核心檔案，這裡強制包含
+!whisper_subtitle_gui.py
+!video_processor.py
+!subtitle_editor.py
+!whisper_accuracy_optimizer.py
+!check_installation.py
+!install_whisper.bat
+!start_whisper_gui.bat
+!check_installation.bat
+!requirements.txt
+!whisper_config.json.template
+!README.md
+!LICENSE

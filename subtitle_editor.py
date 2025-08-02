@@ -6,6 +6,7 @@ from tkinter import ttk, filedialog, messagebox
 import pygame
 import json
 import os
+import tempfile
 from typing import List, Dict
 import threading
 import time
@@ -162,7 +163,9 @@ class SubtitleEditor:
             self.duration = video.duration
             
             # 提取音訊並儲存為臨時檔案
-            audio_path = "temp_audio.wav"
+            import tempfile
+            temp_dir = tempfile.gettempdir()
+            audio_path = os.path.join(temp_dir, f"temp_audio_{os.getpid()}.wav")
             video.audio.write_audiofile(audio_path, verbose=False, logger=None)
             video.close()
             
@@ -387,7 +390,9 @@ class SubtitleEditor:
         if output_path:
             try:
                 # 先儲存臨時 SRT 檔案
-                temp_srt = "temp_subtitles.srt"
+                import tempfile
+                temp_dir = tempfile.gettempdir()
+                temp_srt = os.path.join(temp_dir, f"temp_subtitles_{os.getpid()}.srt")
                 with open(temp_srt, 'w', encoding='utf-8') as f:
                     for i, subtitle in enumerate(self.subtitles, 1):
                         start_str = self.seconds_to_srt_time(subtitle['start'])

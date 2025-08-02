@@ -9,6 +9,7 @@ import threading
 import json
 import time
 import warnings
+import tempfile
 from pathlib import Path
 import sys
 
@@ -33,6 +34,9 @@ warnings.filterwarnings("ignore", message=".*falling back to a slower.*")
 
 class WhisperSubtitleGUI:
     def __init__(self):
+        # 檢查關鍵檔案是否存在
+        self.check_essential_files()
+        
         self.root = tk.Tk()
         self.root.title("Whisper 字幕生成器")
         self.root.geometry("1000x800")  # 增加視窗大小
@@ -65,6 +69,51 @@ class WhisperSubtitleGUI:
         
         self.setup_ui()
         self.load_config()
+    
+    def check_essential_files(self):
+        """檢查關鍵檔案是否存在"""
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        essential_files = [
+            "video_processor.py",
+            "subtitle_editor.py"
+        ]
+        
+        # 檢查可選但重要的檔案
+        optional_files = [
+            "whisper_accuracy_optimizer.py"
+        ]
+        
+        missing_files = []
+        missing_optional = []
+        
+        for filename in essential_files:
+            file_path = os.path.join(script_dir, filename)
+            if not os.path.exists(file_path):
+                missing_files.append(filename)
+        
+        for filename in optional_files:
+            file_path = os.path.join(script_dir, filename)
+            if not os.path.exists(file_path):
+                missing_optional.append(filename)
+        
+        if missing_files:
+            import tkinter.messagebox as msgbox
+            error_msg = f"缺少關鍵檔案:\n\n"
+            for filename in missing_files:
+                error_msg += f"• {filename}\n"
+            error_msg += f"\n請確保所有檔案都在同一個資料夾中。\n"
+            error_msg += f"建議執行 check_installation.bat 進行完整檢查。"
+            
+            # 創建一個臨時的 root 視窗來顯示錯誤
+            temp_root = tk.Tk()
+            temp_root.withdraw()  # 隱藏主視窗
+            msgbox.showerror("檔案缺失", error_msg)
+            temp_root.destroy()
+            sys.exit(1)
+        
+        if missing_optional:
+            print(f"⚠️ 可選檔案缺失: {', '.join(missing_optional)}")
+            print("   程式將以基本模式運行，部分優化功能不可用")
     
     def setup_ui(self):
         """設定使用者介面"""
@@ -342,8 +391,9 @@ class WhisperSubtitleGUI:
     def load_config(self):
         """載入設定檔"""
         try:
-            if os.path.exists("whisper_config.json"):
-                with open("whisper_config.json", 'r', encoding='utf-8') as f:
+            config_path = os.path.join(os.path.dirname(__file__), "whisper_config.json")
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                     self.whisper_model.set(config.get("model", "medium"))
                     self.language.set(config.get("language", "ja"))
@@ -363,8 +413,14 @@ class WhisperSubtitleGUI:
                     self.toggle_custom_model_dir()  # 更新模型目錄界面狀態
                     self.toggle_gpu_settings()  # 更新 GPU 界面狀態
                     self.update_ui_mode()  # 更新操作模式界面
+                    self.log("✅ 設定檔載入成功")
+            else:
+                self.log("ℹ️ 設定檔不存在，使用預設設定")
+                # 首次啟動時自動儲存預設設定
+                self.save_config()
         except Exception as e:
             self.log(f"載入設定失敗: {e}")
+            self.log("ℹ️ 將使用預設設定")
     
     def save_config(self):
         """儲存設定檔"""
@@ -385,7 +441,8 @@ class WhisperSubtitleGUI:
                 "quality_level": self.quality_level.get(),
                 "content_type": self.content_type.get()
             }
-            with open("whisper_config.json", 'w', encoding='utf-8') as f:
+            config_path = os.path.join(os.path.dirname(__file__), "whisper_config.json")
+            with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
         except Exception as e:
             self.log(f"儲存設定失敗: {e}")
@@ -1244,7 +1301,7 @@ class WhisperSubtitleGUI:
                 possible_srt_files = [
                     Path(self.output_srt_path.get()),
                     Path(self.output_srt_path.get()).parent / f"{input_name}.srt",
-                    Path(".") / f"{input_name}.srt"
+                    Path(input_file).parent / f"{input_name}.srt"
                 ]
                 
                 srt_found = False
@@ -1350,12 +1407,17 @@ class WhisperSubtitleGUI:
             warnings.filterwarnings("ignore", message=".*falling back to a slower.*")
             
             import whisper
-            from whisper_accuracy_optimizer import WhisperAccuracyOptimizer
             
-            self.log("🐍 使用優化版 Python API 調用 Whisper...")
-            
-            # 初始化優化器
-            optimizer = WhisperAccuracyOptimizer()
+            # 嘗試載入優化器，如果失敗則使用基本版本
+            try:
+                from whisper_accuracy_optimizer import WhisperAccuracyOptimizer
+                optimizer = WhisperAccuracyOptimizer()
+                self.log("🐍 使用優化版 Python API 調用 Whisper...")
+                use_optimizer = True
+            except ImportError:
+                self.log("⚠️ 優化器未找到，使用基本版 Python API...")
+                optimizer = None
+                use_optimizer = False
             
             # 決定內容類型
             if self.content_type.get() == "auto":
@@ -1382,16 +1444,26 @@ class WhisperSubtitleGUI:
             self.log(f"🎯 內容類型: {content_type}, 語言: {language}, 品質等級: {quality_level}")
             
             # 獲取優化參數
-            optimized_params = optimizer.optimize_whisper_params(
-                content_type=content_type,
-                language=language,
-                quality_level=quality_level
-            )
-            
-            self.log("⚙️ 使用優化參數:")
-            for key, value in optimized_params.items():
-                if key != "temperature":  # temperature 會特別處理
-                    self.log(f"   {key}: {value}")
+            if use_optimizer:
+                optimized_params = optimizer.optimize_whisper_params(
+                    content_type=content_type,
+                    language=language,
+                    quality_level=quality_level
+                )
+                
+                self.log("⚙️ 使用優化參數:")
+                for key, value in optimized_params.items():
+                    if key != "temperature":  # temperature 會特別處理
+                        self.log(f"   {key}: {value}")
+            else:
+                # 使用基本參數
+                optimized_params = {
+                    "language": language if language != "auto" else None,
+                    "temperature": [0.0],
+                    "no_speech_threshold": self.no_speech_threshold.get(),
+                    "condition_on_previous_text": False
+                }
+                self.log("⚙️ 使用基本參數（無優化器）")
             
             # 決定使用的設備
             device = "cpu"
@@ -1417,7 +1489,7 @@ class WhisperSubtitleGUI:
             self.log(f"✅ 模型 {self.whisper_model.get()} 載入成功 (設備: {device})")
             
             # 根據設定決定是否使用多次通過轉錄
-            if self.multi_pass_mode.get():
+            if self.multi_pass_mode.get() and use_optimizer:
                 self.set_status("正在執行多次通過轉錄...", "blue")
                 result = optimizer.multi_pass_transcription(
                     model=model,
@@ -1430,7 +1502,7 @@ class WhisperSubtitleGUI:
                 self.set_status("正在執行單次轉錄...", "blue")
                 # 使用優化參數進行單次轉錄
                 whisper_params = {k: v for k, v in optimized_params.items() 
-                                if k not in ["temperature"]}
+                                if k not in ["temperature"] and v is not None}
                 temperature = optimized_params.get("temperature", [0.0])
                 if isinstance(temperature, list):
                     temperature = temperature[0]  # 使用第一個溫度值
@@ -1444,14 +1516,18 @@ class WhisperSubtitleGUI:
                     )
                 self.log("✅ 單次轉錄完成")
             
-            # 使用優化的 SRT 生成
-            self.set_status("正在生成優化的 SRT 字幕...", "blue")
-            srt_content = optimizer.generate_optimized_srt(
-                result=result,
-                language=language,
-                filter_repetitive=self.filter_repetitive.get(),
-                merge_short_segments=True
-            )
+            # 生成 SRT 字幕
+            if use_optimizer:
+                self.set_status("正在生成優化的 SRT 字幕...", "blue")
+                srt_content = optimizer.generate_optimized_srt(
+                    result=result,
+                    language=language,
+                    filter_repetitive=self.filter_repetitive.get(),
+                    merge_short_segments=True
+                )
+            else:
+                self.set_status("正在生成 SRT 字幕...", "blue")
+                srt_content = self.generate_basic_srt(result)
             
             # 寫入檔案
             with open(output_srt, 'w', encoding='utf-8') as f:
@@ -1467,31 +1543,35 @@ class WhisperSubtitleGUI:
                 self.log(f"📊 檔案大小: {file_size} bytes")
                 self.log(f"📊 原始片段: {original_count}, 優化後: {subtitle_count}")
                 
-                if original_count > 0:
+                if use_optimizer and original_count > 0:
                     reduction_rate = (original_count - subtitle_count) / original_count * 100
                     self.log(f"📊 優化率: {reduction_rate:.1f}% (移除了 {original_count - subtitle_count} 個低品質片段)")
                 
                 # 保存優化報告
-                try:
-                    quality_scores = []
-                    for segment in result.get("segments", []):
-                        if "avg_logprob" in segment:
-                            quality_scores.append(max(0, min(1, (segment["avg_logprob"] + 3) / 3)))
-                    
-                    optimizer.save_optimization_report(
-                        original_segments=original_count,
-                        final_segments=subtitle_count,
-                        quality_scores=quality_scores,
-                        output_path=output_srt
-                    )
-                except Exception as e:
-                    self.log(f"⚠️ 保存優化報告失敗: {e}")
+                if use_optimizer:
+                    try:
+                        quality_scores = []
+                        for segment in result.get("segments", []):
+                            if "avg_logprob" in segment:
+                                quality_scores.append(max(0, min(1, (segment["avg_logprob"] + 3) / 3)))
+                        
+                        optimizer.save_optimization_report(
+                            original_segments=original_count,
+                            final_segments=subtitle_count,
+                            quality_scores=quality_scores,
+                            output_path=output_srt
+                        )
+                    except Exception as e:
+                        self.log(f"⚠️ 保存優化報告失敗: {e}")
                 
                 if subtitle_count > 0:
-                    self.set_status("✅ 優化版 Python API 字幕生成完成！", "green")
+                    if use_optimizer:
+                        self.set_status("✅ 優化版 Python API 字幕生成完成！", "green")
+                    else:
+                        self.set_status("✅ Python API 字幕生成完成！", "green")
                     return True
                 else:
-                    self.log("⚠️ 優化後字幕檔案為空，可能需要調整過濾參數")
+                    self.log("⚠️ 字幕檔案為空，可能需要調整參數")
                     return False
             else:
                 self.log("❌ 檔案寫入失敗")
@@ -1502,6 +1582,38 @@ class WhisperSubtitleGUI:
             # 如果優化版失敗，回退到基本版本
             self.log("🔄 回退到基本版本...")
             return self.run_basic_whisper_api(input_file, output_srt)
+    
+    def generate_basic_srt(self, result):
+        """生成基本的 SRT 字幕（無優化器時使用）"""
+        srt_content = ""
+        segments = result.get("segments", [])
+        
+        for i, segment in enumerate(segments, 1):
+            start_time = segment["start"]
+            end_time = segment["end"]
+            text = segment["text"].strip()
+            
+            if not text:
+                continue
+            
+            # 格式化時間
+            start_str = self.seconds_to_srt_time(start_time)
+            end_str = self.seconds_to_srt_time(end_time)
+            
+            # 添加字幕片段
+            srt_content += f"{i}\n"
+            srt_content += f"{start_str} --> {end_str}\n"
+            srt_content += f"{text}\n\n"
+        
+        return srt_content
+    
+    def seconds_to_srt_time(self, seconds):
+        """將秒數轉換為 SRT 時間格式"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        millisecs = int((seconds % 1) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
     
     def run_basic_whisper_api(self, input_file: str, output_srt: str) -> bool:
         """基本版本的 Whisper API（作為備用方案）"""
@@ -1735,7 +1847,10 @@ class WhisperSubtitleGUI:
                     }
                 }
                 
-                with open("temp_config.json", 'w', encoding='utf-8') as f:
+                import tempfile
+                temp_dir = tempfile.gettempdir()
+                config_path = os.path.join(temp_dir, f"temp_config_{os.getpid()}.json")
+                with open(config_path, 'w', encoding='utf-8') as f:
                     json.dump(config, f, indent=2)
                 
                 self.log(f"⚙️ 字幕設定: 字體大小={self.font_size.get()}, 邊距={self.margin.get()}")
@@ -1745,7 +1860,7 @@ class WhisperSubtitleGUI:
                 self.log("🎬 開始影片處理...")
                 
                 from video_processor import VideoProcessor
-                processor = VideoProcessor("temp_config.json")
+                processor = VideoProcessor(config_path)
                 
                 # 這裡可以添加進度回調，但先用基本版本
                 processor.burn_subtitles_to_video(
@@ -1755,8 +1870,8 @@ class WhisperSubtitleGUI:
                 )
                 
                 # 清理臨時檔案
-                if os.path.exists("temp_config.json"):
-                    os.remove("temp_config.json")
+                if os.path.exists(config_path):
+                    os.remove(config_path)
                 
                 # 檢查輸出檔案
                 if os.path.exists(output_file):
@@ -1819,8 +1934,9 @@ class WhisperSubtitleGUI:
         """顯示音樂識別幫助"""
         try:
             # 檢查是否存在音樂故障排除指南
-            if os.path.exists("music_troubleshooting.md"):
-                with open("music_troubleshooting.md", 'r', encoding='utf-8') as f:
+            help_file_path = os.path.join(os.path.dirname(__file__), "music_troubleshooting.md")
+            if os.path.exists(help_file_path):
+                with open(help_file_path, 'r', encoding='utf-8') as f:
                     help_content = f.read()
             else:
                 help_content = """音樂識別幫助指南
