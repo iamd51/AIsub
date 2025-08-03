@@ -158,6 +158,32 @@ def check_whisper_models():
         safe_print("   [警告] 模型目錄不存在")
         safe_print("   [提示] 首次使用時會自動創建並下載模型")
 
+def check_ffmpeg():
+    """檢查 FFmpeg 是否可用"""
+    safe_print("\n[FFmpeg] 檢查 FFmpeg...")
+    
+    try:
+        result = subprocess.run(['ffmpeg', '-version'], 
+                              capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            safe_print("   [成功] FFmpeg 已安裝並可用")
+            return True
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
+        pass
+    
+    # 檢查本地目錄是否有 ffmpeg.exe
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    local_ffmpeg = os.path.join(script_dir, "ffmpeg.exe")
+    
+    if os.path.exists(local_ffmpeg):
+        safe_print("   [成功] 找到本地 FFmpeg")
+        return True
+    
+    safe_print("   [錯誤] FFmpeg 未找到")
+    safe_print("   [提示] 這會導致 [WinError 2] 錯誤")
+    safe_print("   [解決] 執行 python fix_ffmpeg_issue.py")
+    return False
+
 def check_font_files():
     """檢查字體檔案"""
     safe_print("\n[字體] 檢查字體檔案...")
@@ -201,6 +227,7 @@ def main():
     packages_ok, missing_packages = check_required_packages()
     files_ok, missing_files = check_project_files()
     gpu_available = check_gpu_support()
+    ffmpeg_ok = check_ffmpeg()
     
     check_whisper_models()
     check_font_files()
@@ -210,7 +237,7 @@ def main():
     safe_print("[總結] 檢查結果總結:")
     safe_print("=" * 60)
     
-    if python_ok and packages_ok and files_ok:
+    if python_ok and packages_ok and files_ok and ffmpeg_ok:
         safe_print("[成功] 所有檢查通過！程式應該可以正常運行")
         if gpu_available:
             safe_print("[GPU] GPU 加速可用，處理速度會更快")
@@ -224,8 +251,14 @@ def main():
             safe_print("   - 套件安裝問題")
         if not files_ok:
             safe_print("   - 檔案缺失問題")
+        if not ffmpeg_ok:
+            safe_print("   - FFmpeg 缺失問題 (這是 [WinError 2] 的主要原因)")
         
         provide_solutions(missing_packages, missing_files)
+        
+        if not ffmpeg_ok:
+            safe_print("\n[FFmpeg] 修復 FFmpeg 問題:")
+            safe_print("   執行: python fix_ffmpeg_issue.py")
     
     safe_print("\n按任意鍵退出...")
     input()

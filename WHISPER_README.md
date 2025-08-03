@@ -1,13 +1,23 @@
-# Whisper 字幕生成器
+# Whisper 字幕生成器 v2.2
 
 使用 OpenAI Whisper 自動生成字幕，並燒錄到影片中的簡易工具。
+
+## 🆕 v2.2 更新亮點
+- ✅ **修復 GUI 滾動問題** - 現在可以流暢查看所有處理日誌
+- ✅ **解決 FFmpeg 缺失錯誤** - 自動檢測並一鍵修復 `[WinError 2]` 問題
+- ✅ **確認語言自動偵測** - WAV 檔案載入時自動偵測語言，支援100種語言
+- ✅ **優化使用者介面** - 改善佈局和視覺回饋
 
 ## 🚀 快速開始
 
 ### 1. 安裝
 雙擊 `install_whisper.bat` 自動安裝所有必要套件
 
-### 2. 啟動
+### 2. 環境檢查
+雙擊 `check_installation.bat` 檢查安裝狀態
+- 如出現 FFmpeg 問題，執行 `fix_winerror2.bat` 一鍵修復
+
+### 3. 啟動
 雙擊 `start_whisper_gui.bat` 啟動圖形介面
 
 ## 📋 使用步驟
@@ -121,6 +131,20 @@ A: 刪除不完整的模型檔案（.pt 或 .bin），重新執行程式會自�
 
 ### Q: 我的模型是 ggml-medium.bin 格式
 A: 這是舊版 Whisper 模型格式，程式完全支援。新版是 medium.pt 格式，兩種都可以正常使用
+
+### Q: 出現 [WinError 2] 系統找不到指定的檔案 🆕
+A: **這是 FFmpeg 缺失問題，v2.2 已提供完整解決方案**：
+1. 執行 `fix_winerror2.bat` 一鍵修復
+2. 或執行 `python fix_ffmpeg_issue.py` 自動安裝
+3. 或執行 `python quick_fix_ffmpeg.py` 快速檢查
+
+**詳細說明**: 查看 `FFMPEG_FIX_GUIDE.md`
+
+### Q: GUI 無法滾動查看日誌 🆕
+A: **v2.2 已完全修復此問題**：
+- 現在支援滑鼠滾輪滾動
+- 日誌區域高度增加到 12 行
+- 可以完整查看所有處理資訊
 
 ### Q: 程式啟動失敗或出現路徑錯誤
 A: **首先執行安裝檢查**：

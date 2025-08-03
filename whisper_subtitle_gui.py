@@ -37,13 +37,16 @@ class WhisperSubtitleGUI:
         # 檢查關鍵檔案是否存在
         self.check_essential_files()
         
+        # 檢查並修復 FFmpeg 問題
+        self.check_and_fix_ffmpeg()
+        
         self.root = tk.Tk()
         self.root.title("Whisper 字幕生成器")
-        self.root.geometry("1000x800")  # 增加視窗大小
+        self.root.geometry("1000x900")  # 增加視窗高度以容納更多內容
         self.root.resizable(True, True)
         
         # 設定最小視窗大小
-        self.root.minsize(900, 700)
+        self.root.minsize(900, 750)
         
         # 變數
         self.video_path = tk.StringVar()
@@ -115,12 +118,115 @@ class WhisperSubtitleGUI:
             print(f"⚠️ 可選檔案缺失: {', '.join(missing_optional)}")
             print("   程式將以基本模式運行，部分優化功能不可用")
     
+    def check_and_fix_ffmpeg(self):
+        """檢查並修復 FFmpeg 問題"""
+        # 強制設定本地 FFmpeg 環境
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        local_ffmpeg = os.path.join(script_dir, "ffmpeg.exe")
+        
+        # 優先使用本地 FFmpeg
+        if os.path.exists(local_ffmpeg):
+            # 強制設定環境變數
+            current_path = os.environ.get('PATH', '')
+            if script_dir not in current_path:
+                os.environ['PATH'] = script_dir + os.pathsep + current_path
+            
+            os.environ['FFMPEG_BINARY'] = local_ffmpeg
+            os.environ['FFPROBE_BINARY'] = os.path.join(script_dir, "ffprobe.exe")
+            print(f"✅ 使用本地 FFmpeg: {local_ffmpeg}")
+            
+            # 測試本地 FFmpeg
+            try:
+                result = subprocess.run([local_ffmpeg, '-version'], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    print("✅ 本地 FFmpeg 測試通過")
+                    return True
+            except Exception as e:
+                print(f"⚠️ 本地 FFmpeg 測試失敗: {e}")
+        
+        # 檢查系統 FFmpeg
+        try:
+            result = subprocess.run(['ffmpeg', '-version'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                print("✅ 系統 FFmpeg 檢查通過")
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
+            pass
+        
+        # FFmpeg 不可用，顯示詳細警告
+        print("❌ FFmpeg 未找到或不可用")
+        print("💡 這會導致 [WinError 2] 系統找不到指定的檔案 錯誤")
+        print("🔧 建議解決方案:")
+        print("   1. 執行: python diagnose_winerror2.py (深度診斷)")
+        print("   2. 執行: python fix_ffmpeg_issue.py (自動修復)")
+        print("   3. 手動下載 ffmpeg.exe 到程式目錄")
+        
+        # 在 Windows 上嘗試自動修復
+        if sys.platform.startswith('win'):
+            try:
+                import tkinter.messagebox as msgbox
+                temp_root = tk.Tk()
+                temp_root.withdraw()
+                
+                response = msgbox.askyesno(
+                    "FFmpeg 缺失 - [WinError 2] 錯誤", 
+                    "檢測到 FFmpeg 缺失，這會導致以下錯誤：\n"
+                    "[WinError 2] 系統找不到指定的檔案\n\n"
+                    "是否要執行深度診斷和自動修復？\n"
+                    "(需要網路連線)"
+                )
+                
+                temp_root.destroy()
+                
+                if response:
+                    self.run_ffmpeg_diagnosis()
+                    
+            except Exception as e:
+                print(f"自動修復對話框失敗: {e}")
+        
+        return False
+    
+    def run_ffmpeg_diagnosis(self):
+        """執行 FFmpeg 診斷"""
+        try:
+            print("� 啟在動 FFmpeg 診斷工具...")
+            
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            diagnosis_script = os.path.join(script_dir, "diagnose_winerror2.py")
+            
+            if os.path.exists(diagnosis_script):
+                # 在新視窗中執行診斷
+                subprocess.Popen([sys.executable, diagnosis_script], 
+                               cwd=script_dir, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                print("✅ 診斷工具已啟動")
+            else:
+                print("❌ 找不到診斷腳本")
+                # 嘗試執行修復腳本
+                fix_script = os.path.join(script_dir, "fix_ffmpeg_issue.py")
+                if os.path.exists(fix_script):
+                    subprocess.Popen([sys.executable, fix_script], 
+                                   cwd=script_dir, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    print("✅ 修復工具已啟動")
+                
+        except Exception as e:
+            print(f"診斷工具啟動失敗: {e}")
+    
+    def auto_install_ffmpeg(self):
+        """自動安裝 FFmpeg（保留向後相容性）"""
+        self.run_ffmpeg_diagnosis()
+    
     def setup_ui(self):
         """設定使用者介面"""
         # 主框架 - 使用 Scrollable Frame
         main_canvas = tk.Canvas(self.root)
         scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=main_canvas.yview)
         scrollable_frame = ttk.Frame(main_canvas)
+        
+        # 儲存 canvas 和 scrollable_frame 為實例變數，方便後續使用
+        self.main_canvas = main_canvas
+        self.scrollable_frame = scrollable_frame
         
         scrollable_frame.bind(
             "<Configure>",
@@ -130,11 +236,18 @@ class WhisperSubtitleGUI:
         main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         main_canvas.configure(yscrollcommand=scrollbar.set)
         
-        # 添加滑鼠滾輪支援
+        # 添加滑鼠滾輪支援 - 改進版本
         def _on_mousewheel(event):
             main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         
+        # 綁定滾輪事件到多個元件
+        def bind_mousewheel(widget):
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            for child in widget.winfo_children():
+                bind_mousewheel(child)
+        
         main_canvas.bind("<MouseWheel>", _on_mousewheel)
+        self.root.bind("<MouseWheel>", _on_mousewheel)
         
         main_canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -142,6 +255,10 @@ class WhisperSubtitleGUI:
         # 主要內容框架
         main_frame = ttk.Frame(scrollable_frame, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # 確保 scrollable_frame 可以擴展
+        scrollable_frame.columnconfigure(0, weight=1)
+        scrollable_frame.rowconfigure(0, weight=1)
         
         # 標題
         title_label = ttk.Label(main_frame, text="Whisper 字幕生成器", font=("Arial", 16, "bold"))
@@ -225,21 +342,6 @@ class WhisperSubtitleGUI:
                                     values=["auto", "speech", "music", "song", "podcast", "audiobook"],
                                     width=12, state="readonly")
         content_combo.pack(side=tk.LEFT)
-        basic_row.grid(row=0, column=0, columnspan=6, sticky=(tk.W, tk.E), pady=(0, 5))
-        
-        # 模型選擇
-        ttk.Label(basic_row, text="模型:").pack(side=tk.LEFT)
-        model_combo = ttk.Combobox(basic_row, textvariable=self.whisper_model, 
-                                  values=["tiny", "base", "small", "medium", "large"], 
-                                  state="readonly", width=10)
-        model_combo.pack(side=tk.LEFT, padx=(5, 15))
-        
-        # 語言選擇
-        ttk.Label(basic_row, text="語言:").pack(side=tk.LEFT)
-        lang_combo = ttk.Combobox(basic_row, textvariable=self.language,
-                                 values=["ja", "en", "zh", "ko", "auto"], 
-                                 state="readonly", width=8)
-        lang_combo.pack(side=tk.LEFT, padx=(5, 15))
         
         # GPU 設定
         ttk.Checkbutton(basic_row, text="GPU 加速", 
@@ -390,11 +492,12 @@ class WhisperSubtitleGUI:
         self.status_label = ttk.Label(progress_frame, text="準備就緒", foreground="green")
         self.status_label.pack()
         
-        # 日誌區域 - 減少高度
+        # 日誌區域 - 增加高度並改善滾動
         log_frame = ttk.LabelFrame(main_frame, text="處理日誌", padding="5")
         log_frame.grid(row=7, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(5, 5))
         
-        self.log_text = tk.Text(log_frame, height=6, wrap=tk.WORD, font=("Consolas", 9))
+        # 增加日誌區域高度，並確保有足夠空間顯示內容
+        self.log_text = tk.Text(log_frame, height=12, wrap=tk.WORD, font=("Consolas", 9))
         log_scroll = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=log_scroll.set)
         
@@ -404,13 +507,29 @@ class WhisperSubtitleGUI:
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         
-        # 設定網格權重
+        # 設定網格權重 - 讓日誌區域可以擴展
         main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(7, weight=1)  # 調整為日誌區域的新行號
-        scrollable_frame.columnconfigure(0, weight=1)
+        main_frame.rowconfigure(7, weight=1)  # 日誌區域可以垂直擴展
+        
+        # 延遲綁定滾輪事件到所有子元件
+        def bind_all_mousewheel():
+            def bind_recursive(widget):
+                try:
+                    widget.bind("<MouseWheel>", lambda e: self.main_canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+                    for child in widget.winfo_children():
+                        bind_recursive(child)
+                except:
+                    pass
+            bind_recursive(main_frame)
+        
+        # 在 UI 完成後綁定滾輪事件
+        self.root.after(100, bind_all_mousewheel)
         
         # 初始化 UI 模式
         self.update_ui_mode()
+        
+        # 確保滾動區域正確設定
+        self.root.after(200, self.update_scroll_region)
     
     def load_config(self):
         """載入設定檔"""
@@ -831,6 +950,14 @@ class WhisperSubtitleGUI:
             self.no_speech_threshold.set(0.6)
             self.temperature.set(0.0)
             self.log("💬 已切換到一般語音模式")
+    
+    def update_scroll_region(self):
+        """更新滾動區域"""
+        try:
+            self.scrollable_frame.update_idletasks()
+            self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all"))
+        except:
+            pass
     
     def update_ui_mode(self):
         """根據操作模式更新 UI"""
