@@ -1979,21 +1979,29 @@ class WhisperSubtitleGUI:
                     self.log(f"⚠️ 跳過重複內容: {text[:30]}...")
                     continue
             
-            # 過濾常見的無意義內容
-            meaningless_patterns = [
-                "作詞・作曲・編曲",
-                "初音ミク",
-                "♪",
-                "...",
-                "---",
-                "字幕",
-                "subtitle"
-            ]
-            
-            is_meaningless = any(pattern in text for pattern in meaningless_patterns)
-            if is_meaningless and len(text) < 20:  # 短且包含無意義內容
-                self.log(f"⚠️ 跳過無意義內容: {text}")
-                continue
+            # 使用增強版音樂內容過濾器
+            try:
+                from enhanced_music_filter import filter_music_content
+                should_keep, cleaned_text = filter_music_content(text)
+                
+                if not should_keep:
+                    continue
+                
+                # 使用清理後的文字
+                text = cleaned_text
+                
+            except ImportError:
+                # 如果增強版過濾器不可用，使用基本過濾
+                meaningless_patterns = [
+                    "作詞・作曲・編曲", "作詞", "作曲", "編曲",
+                    "初音ミク", "ボーカロイド", "VOCALOID",
+                    "♪", "♫", "♬", "♩"
+                ]
+                
+                is_meaningless = any(pattern in text for pattern in meaningless_patterns)
+                if is_meaningless and (len(text) < 50 or text.count("作詞") > 2):
+                    self.log(f"⚠️ 跳過無意義內容: {text[:30]}...")
+                    continue
             
             filtered_segments.append({
                 "start": segment["start"],

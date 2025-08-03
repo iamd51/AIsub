@@ -106,7 +106,9 @@ class WhisperAccuracyOptimizer:
                     "♪", "♫", "♬", "♩",
                     "ラララ", "ナナナ", "ハハハ",
                     "作詞", "作曲", "編曲",
-                    "初音ミク", "ボーカロイド",
+                    "作詞・作曲・編曲",
+                    "初音ミク", "ボーカロイド", "VOCALOID",
+                    "music", "lyrics", "song",
                 ]
             },
             
@@ -402,6 +404,11 @@ class WhisperAccuracyOptimizer:
             if not text or len(text) < 2:
                 continue
             
+            # 先過濾音樂元數據
+            text = self.filter_music_metadata(text)
+            if not text:
+                continue
+            
             # 語言特定的清理
             if language in self.language_rules:
                 text = self.clean_text_by_language(text, language)
@@ -432,6 +439,41 @@ class WhisperAccuracyOptimizer:
         
         print(f"✅ 最終保留: {len(final_segments)} 個高品質片段")
         return final_segments
+    
+    def filter_music_metadata(self, text: str) -> str:
+        """
+        過濾音樂元數據和製作資訊
+        """
+        # 音樂製作相關的詞彙
+        music_metadata_patterns = [
+            r"作詞[・･]?作曲[・･]?編曲.*",
+            r"作詞.*作曲.*編曲.*",
+            r"初音ミク.*",
+            r"VOCALOID.*",
+            r"ボーカロイド.*",
+            r"Composer:.*",
+            r"Lyricist:.*",
+            r"Arranger:.*",
+            r"Music by.*",
+            r"Lyrics by.*",
+        ]
+        
+        import re
+        for pattern in music_metadata_patterns:
+            text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+        
+        # 移除過多的重複字符
+        text = re.sub(r"(.)\1{4,}", r"\1", text)  # 超過4個重複字符縮減為1個
+        
+        # 移除只包含符號的行
+        lines = text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            if line and not re.match(r'^[♪♫♬♩・･\-_=\s]+$', line):
+                cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines).strip()
     
     def clean_text_by_language(self, text: str, language: str) -> str:
         """
