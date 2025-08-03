@@ -72,6 +72,36 @@ echo.
 echo [6/6] 安裝 GUI 和其他套件...
 pip install pygame pathlib
 
+REM 建立設定檔
+echo.
+echo [7/7] 建立預設設定檔...
+if not exist "whisper_config.json" (
+    if exist "whisper_config.json.template" (
+        copy "whisper_config.json.template" "whisper_config.json"
+        echo [完成] 已從模板建立設定檔
+    ) else (
+        echo { > whisper_config.json
+        echo   "model": "medium", >> whisper_config.json
+        echo   "language": "auto", >> whisper_config.json
+        echo   "font_size": 48, >> whisper_config.json
+        echo   "margin": 80, >> whisper_config.json
+        echo   "use_audio_file": false, >> whisper_config.json
+        echo   "use_custom_model_dir": false, >> whisper_config.json
+        echo   "custom_model_dir": "", >> whisper_config.json
+        echo   "operation_mode": "generate_only", >> whisper_config.json
+        echo   "use_gpu": true, >> whisper_config.json
+        echo   "device": "auto", >> whisper_config.json
+        echo   "use_optimization": true, >> whisper_config.json
+        echo   "multi_pass_mode": false, >> whisper_config.json
+        echo   "quality_level": "auto", >> whisper_config.json
+        echo   "content_type": "auto" >> whisper_config.json
+        echo } >> whisper_config.json
+        echo [完成] 已建立預設設定檔
+    )
+) else (
+    echo [資訊] 設定檔已存在，跳過建立
+)
+
 echo.
 echo ========================================
 echo              安裝完成！
@@ -80,6 +110,19 @@ echo.
 echo 現在您可以：
 echo 1. 雙擊 start_whisper_gui.bat 啟動圖形介面
 echo 2. 或直接執行: python whisper_subtitle_gui.py
+echo.
+echo 重要改善：
+echo - 模式簡化：建議先生成字幕，手動檢查修正後再燒錄
+echo - 語言偵測：預設為自動偵測（支援中文、日文、英文等）
+echo - 設定檔：已自動建立個人化設定檔
+echo - 字幕編輯：可使用內建編輯器修正字幕錯誤
+echo.
+echo 使用流程建議：
+echo 1. 選擇「生成字幕檔案」模式
+echo 2. 選擇影片或音訊檔案
+echo 3. 點擊「生成字幕」
+echo 4. 點擊「編輯字幕」檢查和修正
+echo 5. 切換到「燒錄模式」將字幕加到影片
 echo.
 echo 注意事項：
 echo - 首次使用時 Whisper 會下載模型檔案（約 100MB-1GB）

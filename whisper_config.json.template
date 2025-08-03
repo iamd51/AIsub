@@ -1,10 +1,16 @@
 {
   "model": "medium",
-  "language": "ja",
+  "language": "auto",
   "font_size": 48,
   "margin": 80,
   "use_audio_file": false,
   "use_custom_model_dir": false,
   "custom_model_dir": "",
-  "operation_mode": "generate_and_burn"
+  "operation_mode": "generate_only",
+  "use_gpu": true,
+  "device": "auto",
+  "use_optimization": true,
+  "multi_pass_mode": false,
+  "quality_level": "auto",
+  "content_type": "auto"
 }

@@ -51,7 +51,7 @@ class WhisperSubtitleGUI:
         self.output_srt_path = tk.StringVar()
         self.output_video_path = tk.StringVar()
         self.whisper_model = tk.StringVar(value="medium")
-        self.language = tk.StringVar(value="ja")
+        self.language = tk.StringVar(value="auto")  # 改為自動偵測
         self.use_audio_file = tk.BooleanVar(value=False)
         self.custom_model_dir = tk.StringVar()
         self.use_custom_model_dir = tk.BooleanVar(value=False)
@@ -147,16 +147,21 @@ class WhisperSubtitleGUI:
         title_label = ttk.Label(main_frame, text="Whisper 字幕生成器", font=("Arial", 16, "bold"))
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, 10))
         
-        # 模式選擇
+        # 模式選擇 - 簡化為僅生成字幕
         mode_frame = ttk.LabelFrame(main_frame, text="操作模式", padding="10")
         mode_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 5))
         
-        self.operation_mode = tk.StringVar(value="generate_and_burn")
+        self.operation_mode = tk.StringVar(value="generate_only")
         
-        ttk.Radiobutton(mode_frame, text="生成字幕 + 燒錄影片", variable=self.operation_mode, 
-                       value="generate_and_burn", command=self.update_ui_mode).grid(row=0, column=0, sticky=tk.W, padx=10)
+        ttk.Radiobutton(mode_frame, text="生成字幕檔案（SRT）", variable=self.operation_mode, 
+                       value="generate_only", command=self.update_ui_mode).grid(row=0, column=0, sticky=tk.W, padx=10)
         ttk.Radiobutton(mode_frame, text="僅燒錄現有字幕到影片", variable=self.operation_mode, 
                        value="burn_only", command=self.update_ui_mode).grid(row=0, column=1, sticky=tk.W, padx=10)
+        
+        # 添加提示說明
+        mode_info = ttk.Label(mode_frame, text="💡 建議：先生成字幕檔案，檢查並編輯後再燒錄到影片", 
+                             font=("Arial", 9), foreground="blue")
+        mode_info.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
         
         # 檔案選擇區域
         file_frame = ttk.LabelFrame(main_frame, text="檔案選擇", padding="10")
@@ -196,8 +201,30 @@ class WhisperSubtitleGUI:
         self.whisper_frame = ttk.LabelFrame(main_frame, text="Whisper 設定", padding="8")
         self.whisper_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(5, 8))
         
-        # 第一行：基本設定
+        # 基本設定（水平排列）
         basic_row = ttk.Frame(self.whisper_frame)
+        basic_row.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 5))
+        
+        # 模型選擇
+        ttk.Label(basic_row, text="模型:").pack(side=tk.LEFT, padx=(0, 5))
+        model_combo = ttk.Combobox(basic_row, textvariable=self.whisper_model, 
+                                  values=["tiny", "base", "small", "medium", "large", "large-v3", "turbo"],
+                                  width=10, state="readonly")
+        model_combo.pack(side=tk.LEFT, padx=(0, 15))
+        
+        # 語言選擇（自動偵測預設）
+        ttk.Label(basic_row, text="語言:").pack(side=tk.LEFT, padx=(0, 5))
+        language_combo = ttk.Combobox(basic_row, textvariable=self.language, 
+                                     values=["auto", "zh", "zh-cn", "zh-tw", "ja", "en", "ko", "es", "fr", "de"],
+                                     width=8, state="readonly")
+        language_combo.pack(side=tk.LEFT, padx=(0, 15))
+        
+        # 內容類型（幫助語言偵測）
+        ttk.Label(basic_row, text="內容類型:").pack(side=tk.LEFT, padx=(0, 5))
+        content_combo = ttk.Combobox(basic_row, textvariable=self.content_type,
+                                    values=["auto", "speech", "music", "song", "podcast", "audiobook"],
+                                    width=12, state="readonly")
+        content_combo.pack(side=tk.LEFT)
         basic_row.grid(row=0, column=0, columnspan=6, sticky=(tk.W, tk.E), pady=(0, 5))
         
         # 模型選擇
@@ -332,11 +359,11 @@ class WhisperSubtitleGUI:
         margin_spin = ttk.Spinbox(settings_row, from_=20, to=200, textvariable=self.margin, width=6)
         margin_spin.pack(side=tk.LEFT, padx=5)
         
-        # 控制按鈕區域 - 更緊湊的佈局
+        # 控制按鈕區域 - 簡化佈局
         control_frame = ttk.LabelFrame(main_frame, text="執行操作", padding="8")
         control_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 8))
         
-        # 使用水平佈局，四個按鈕一行
+        # 使用水平佈局，兩個主要按鈕
         buttons_row = ttk.Frame(control_frame)
         buttons_row.pack(fill=tk.X)
         
@@ -344,17 +371,14 @@ class WhisperSubtitleGUI:
                                       command=self.generate_subtitles)
         self.generate_btn.pack(side=tk.LEFT, padx=(0, 5), fill=tk.X, expand=True)
         
-        self.burn_btn = ttk.Button(buttons_row, text="🔥 燒錄字幕", 
-                                  command=self.burn_subtitles, state="disabled")
-        self.burn_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        
-        self.all_in_one_btn = ttk.Button(buttons_row, text="⚡ 一鍵完成", 
-                                        command=self.process_all_in_one)
-        self.all_in_one_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        
-        self.burn_only_btn = ttk.Button(buttons_row, text="📝 僅燒錄", 
+        self.burn_only_btn = ttk.Button(buttons_row, text="🔥 燒錄字幕", 
                                        command=self.burn_subtitles)
         self.burn_only_btn.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        
+        # 添加字幕編輯器按鈕
+        self.edit_btn = ttk.Button(buttons_row, text="✏️ 編輯字幕", 
+                                  command=self.open_subtitle_editor, state="disabled")
+        self.edit_btn.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
         
         # 進度條和狀態 - 更緊湊
         progress_frame = ttk.Frame(main_frame)
@@ -396,13 +420,13 @@ class WhisperSubtitleGUI:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                     self.whisper_model.set(config.get("model", "medium"))
-                    self.language.set(config.get("language", "ja"))
+                    self.language.set(config.get("language", "auto"))  # 改為自動偵測預設
                     self.font_size.set(config.get("font_size", 48))
                     self.margin.set(config.get("margin", 80))
                     self.use_audio_file.set(config.get("use_audio_file", False))
                     self.use_custom_model_dir.set(config.get("use_custom_model_dir", False))
                     self.custom_model_dir.set(config.get("custom_model_dir", ""))
-                    self.operation_mode.set(config.get("operation_mode", "generate_and_burn"))
+                    self.operation_mode.set(config.get("operation_mode", "generate_only"))
                     self.use_gpu.set(config.get("use_gpu", True))
                     self.device.set(config.get("device", "auto"))
                     self.use_optimization.set(config.get("use_optimization", True))
@@ -812,8 +836,8 @@ class WhisperSubtitleGUI:
         """根據操作模式更新 UI"""
         mode = self.operation_mode.get()
         
-        if mode == "generate_and_burn":
-            # 生成字幕模式
+        if mode == "generate_only":
+            # 僅生成字幕模式
             self.srt_label.config(text="字幕檔案 (輸出):")
             self.srt_btn.config(command=self.select_srt_output)
             
@@ -826,13 +850,13 @@ class WhisperSubtitleGUI:
                 self.audio_entry.grid()
                 self.audio_btn.grid()
             
-            # 按鈕狀態
+            # 按鈕狀態 - 只保留生成字幕和編輯按鈕
             self.generate_btn.pack(side=tk.LEFT, padx=(0, 5), fill=tk.X, expand=True)
-            self.burn_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-            self.all_in_one_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+            if hasattr(self, 'edit_btn'):
+                self.edit_btn.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
             self.burn_only_btn.pack_forget()
             
-            self.log("模式: 生成字幕 + 燒錄影片")
+            self.log("模式: 僅生成字幕檔案")
             
         elif mode == "burn_only":
             # 僅燒錄模式
@@ -849,15 +873,15 @@ class WhisperSubtitleGUI:
             
             # 按鈕狀態
             self.generate_btn.pack_forget()
-            self.burn_btn.pack_forget()
-            self.all_in_one_btn.pack_forget()
-            self.burn_only_btn.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+            if hasattr(self, 'edit_btn'):
+                self.edit_btn.pack_forget()
+            self.burn_only_btn.pack(side=tk.LEFT, padx=(0, 0), fill=tk.X, expand=True)
             
             self.log("模式: 僅燒錄現有字幕到影片")
     
     def select_srt_file(self):
         """根據模式選擇 SRT 檔案"""
-        if self.operation_mode.get() == "generate_and_burn":
+        if self.operation_mode.get() == "generate_only":
             self.select_srt_output()
         else:
             self.select_existing_srt()
@@ -872,6 +896,10 @@ class WhisperSubtitleGUI:
             self.output_srt_path.set(file_path)
             self.log(f"已選擇字幕檔案: {file_path}")
             
+            # 如果字幕檔案存在，啟用編輯按鈕
+            if hasattr(self, 'edit_btn'):
+                self.edit_btn.config(state="normal")
+            
             # 檢查字幕內容
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
@@ -882,16 +910,6 @@ class WhisperSubtitleGUI:
             except Exception as e:
                 self.log(f"讀取字幕檔案時出錯: {e}")
                 messagebox.showwarning("警告", f"無法讀取字幕檔案: {e}")
-    
-    def select_srt_output(self):
-        """選擇 SRT 輸出路徑"""
-        file_path = filedialog.asksaveasfilename(
-            title="儲存字幕檔案",
-            defaultextension=".srt",
-            filetypes=[("SRT 檔案", "*.srt"), ("所有檔案", "*.*")]
-        )
-        if file_path:
-            self.output_srt_path.set(file_path)
     
     def select_srt_output(self):
         """選擇 SRT 輸出路徑"""
@@ -931,21 +949,22 @@ class WhisperSubtitleGUI:
         
         # 停用所有按鈕
         self.generate_btn.config(state="disabled")
-        self.burn_btn.config(state="disabled")
-        self.all_in_one_btn.config(state="disabled")
         self.burn_only_btn.config(state="disabled")
+        if hasattr(self, 'edit_btn'):
+            self.edit_btn.config(state="disabled")
     
     def stop_progress(self):
         """停止進度條"""
         self.progress.stop()
         self.is_processing = False
         
+        # 恢復按鈕狀態
         mode = self.operation_mode.get()
-        if mode == "generate_and_burn":
+        if mode == "generate_only":
             self.generate_btn.config(state="normal")
-            if os.path.exists(self.output_srt_path.get()):
-                self.burn_btn.config(state="normal")
-            self.all_in_one_btn.config(state="normal")
+            # 如果生成了字幕檔案，啟用編輯按鈕
+            if hasattr(self, 'edit_btn') and os.path.exists(self.output_srt_path.get()):
+                self.edit_btn.config(state="normal")
         elif mode == "burn_only":
             self.burn_only_btn.config(state="normal")
     
@@ -953,8 +972,8 @@ class WhisperSubtitleGUI:
         """驗證輸入"""
         mode = self.operation_mode.get()
         
-        if mode == "generate_and_burn":
-            # 生成字幕模式的驗證
+        if mode == "generate_only":
+            # 僅生成字幕模式的驗證
             if self.use_audio_file.get():
                 if not self.audio_path.get():
                     messagebox.showerror("錯誤", "請選擇音訊檔案")
@@ -1009,9 +1028,15 @@ class WhisperSubtitleGUI:
                 self.log("🎤 開始 Whisper 字幕生成")
                 self.log("=" * 50)
                 
+                # 環境診斷資訊
+                self.log(f"💻 工作目錄: {os.getcwd()}")
+                self.log(f"🐍 Python 版本: {sys.version}")
+                self.log(f"📁 腳本目錄: {os.path.dirname(os.path.abspath(__file__))}")
+                
                 # 決定輸入檔案
                 input_file = self.audio_path.get() if self.use_audio_file.get() else self.video_path.get()
                 self.log(f"📁 輸入檔案: {input_file}")
+                self.log(f"📁 輸出檔案: {self.output_srt_path.get()}")
                 self.log(f"🎯 使用模型: {self.whisper_model.get()}")
                 self.log(f"🌍 語言設定: {self.language.get()}")
                 
@@ -1045,14 +1070,21 @@ class WhisperSubtitleGUI:
                 if has_chinese_chars and sys.platform.startswith('win'):
                     self.log("🔧 偵測到中文路徑，直接使用 Python API 避免編碼問題")
                     try:
+                        success = False
                         if self.use_optimization.get():
+                            self.log("🧠 嘗試使用優化版 Python API...")
                             success = self.run_whisper_python_api(input_file, self.output_srt_path.get())
-                        else:
+                        
+                        if not success:
+                            self.log("🔄 回退到基本版本...")
                             success = self.run_basic_whisper_api(input_file, self.output_srt_path.get())
                         
                         if success:
                             self.set_status("✅ 字幕生成完成！", "green")
                             self.log("🎉 字幕生成成功完成！")
+                            # 啟用編輯按鈕
+                            if hasattr(self, 'edit_btn'):
+                                self.edit_btn.config(state="normal")
                         else:
                             self.set_status("❌ 字幕生成失敗", "red")
                             self.log("❌ 字幕生成失敗")
@@ -1351,11 +1383,14 @@ class WhisperSubtitleGUI:
                             if subtitle_count > 0:
                                 self.set_status("✅ 字幕生成完成！", "green")
                                 self.log("🎉 字幕生成成功完成！")
-                                self.burn_btn.config(state="normal")
+                                # 啟用編輯按鈕
+                                if hasattr(self, 'edit_btn'):
+                                    self.edit_btn.config(state="normal")
                                 
                                 # 顯示成功通知
-                                messagebox.showinfo("成功", f"字幕生成完成！\n\n檔案位置: {self.output_srt_path.get()}\n字幕片段: {subtitle_count} 個\n\n是否要預覽字幕內容？")
-                                self.preview_subtitles()
+                                messagebox.showinfo("成功", f"字幕生成完成！\n\n檔案位置: {self.output_srt_path.get()}\n字幕片段: {subtitle_count} 個\n\n現在可以點擊「編輯字幕」檢查內容。")
+                                # 暫時不自動預覽，讓使用者主動選擇
+                                # self.preview_subtitles()
                             else:
                                 self.set_status("⚠️ 字幕檔案為空", "orange")
                                 self.log("⚠️ 字幕檔案已生成但內容為空")
@@ -1408,14 +1443,34 @@ class WhisperSubtitleGUI:
             
             import whisper
             
+            # 檢查輸入檔案是否存在
+            if not os.path.exists(input_file):
+                raise FileNotFoundError(f"輸入檔案不存在: {input_file}")
+            
+            # 檢查輸出目錄是否存在，如果不存在則創建
+            output_dir = os.path.dirname(output_srt)
+            if output_dir and not os.path.exists(output_dir):
+                try:
+                    os.makedirs(output_dir, exist_ok=True)
+                    self.log(f"🔧 創建輸出目錄: {output_dir}")
+                except Exception as e:
+                    self.log(f"❌ 創建輸出目錄失敗: {e}")
+                    return False
+            
             # 嘗試載入優化器，如果失敗則使用基本版本
             try:
                 from whisper_accuracy_optimizer import WhisperAccuracyOptimizer
                 optimizer = WhisperAccuracyOptimizer()
                 self.log("🐍 使用優化版 Python API 調用 Whisper...")
                 use_optimizer = True
-            except ImportError:
-                self.log("⚠️ 優化器未找到，使用基本版 Python API...")
+            except ImportError as e:
+                self.log(f"⚠️ 優化器未找到: {e}")
+                self.log("⚠️ 使用基本版 Python API...")
+                optimizer = None
+                use_optimizer = False
+            except Exception as e:
+                self.log(f"⚠️ 載入優化器時出錯: {e}")
+                self.log("⚠️ 使用基本版 Python API...")
                 optimizer = None
                 use_optimizer = False
             
@@ -1425,7 +1480,13 @@ class WhisperSubtitleGUI:
             else:
                 content_type = self.content_type.get()
             
-            language = self.language.get() if self.language.get() != "auto" else "auto"
+            # 智能語言偵測
+            language = self.language.get()
+            if language == "auto":
+                self.log("🔍 使用自動語言偵測...")
+                language = None  # Whisper 會自動偵測
+            else:
+                self.log(f"🌍 使用指定語言: {language}")
             
             # 決定品質等級
             if self.quality_level.get() == "auto":
@@ -1441,13 +1502,13 @@ class WhisperSubtitleGUI:
             else:
                 quality_level = self.quality_level.get()
             
-            self.log(f"🎯 內容類型: {content_type}, 語言: {language}, 品質等級: {quality_level}")
+            self.log(f"🎯 內容類型: {content_type}, 語言: {language if language else 'auto'}, 品質等級: {quality_level}")
             
             # 獲取優化參數
             if use_optimizer:
                 optimized_params = optimizer.optimize_whisper_params(
                     content_type=content_type,
-                    language=language,
+                    language=language if language else "auto",
                     quality_level=quality_level
                 )
                 
@@ -1458,7 +1519,7 @@ class WhisperSubtitleGUI:
             else:
                 # 使用基本參數
                 optimized_params = {
-                    "language": language if language != "auto" else None,
+                    "language": language,  # None 表示自動偵測
                     "temperature": [0.0],
                     "no_speech_threshold": self.no_speech_threshold.get(),
                     "condition_on_previous_text": False
@@ -1483,55 +1544,89 @@ class WhisperSubtitleGUI:
             
             # 載入模型
             self.set_status("正在載入 Whisper 模型...", "blue")
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                model = whisper.load_model(self.whisper_model.get(), device=device)
-            self.log(f"✅ 模型 {self.whisper_model.get()} 載入成功 (設備: {device})")
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    model = whisper.load_model(self.whisper_model.get(), device=device)
+                self.log(f"✅ 模型 {self.whisper_model.get()} 載入成功 (設備: {device})")
+            except Exception as e:
+                self.log(f"❌ 模型載入失敗: {e}")
+                import traceback
+                self.log(f"🔍 詳細錯誤:\n{traceback.format_exc()}")
+                return False
             
             # 根據設定決定是否使用多次通過轉錄
             if self.multi_pass_mode.get() and use_optimizer:
                 self.set_status("正在執行多次通過轉錄...", "blue")
-                result = optimizer.multi_pass_transcription(
-                    model=model,
-                    audio_file=input_file,
-                    params=optimized_params,
-                    language=language
-                )
-                self.log("✅ 多次通過轉錄完成")
+                try:
+                    result = optimizer.multi_pass_transcription(
+                        model=model,
+                        audio_file=input_file,
+                        params=optimized_params,
+                        language=language
+                    )
+                    self.log("✅ 多次通過轉錄完成")
+                except Exception as e:
+                    self.log(f"❌ 多次通過轉錄失敗: {e}")
+                    import traceback
+                    self.log(f"🔍 詳細錯誤:\n{traceback.format_exc()}")
+                    return False
             else:
                 self.set_status("正在執行單次轉錄...", "blue")
                 # 使用優化參數進行單次轉錄
-                whisper_params = {k: v for k, v in optimized_params.items() 
-                                if k not in ["temperature"] and v is not None}
-                temperature = optimized_params.get("temperature", [0.0])
-                if isinstance(temperature, list):
-                    temperature = temperature[0]  # 使用第一個溫度值
-                
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    result = model.transcribe(
-                        input_file,
-                        temperature=temperature,
-                        **whisper_params
-                    )
-                self.log("✅ 單次轉錄完成")
+                try:
+                    whisper_params = {k: v for k, v in optimized_params.items() 
+                                    if k not in ["temperature"] and v is not None}
+                    temperature = optimized_params.get("temperature", [0.0])
+                    if isinstance(temperature, list):
+                        temperature = temperature[0]  # 使用第一個溫度值
+                    
+                    self.log(f"🔧 轉錄參數: {whisper_params}")
+                    self.log(f"🔧 溫度: {temperature}")
+                    
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        result = model.transcribe(
+                            input_file,
+                            temperature=temperature,
+                            **whisper_params
+                        )
+                    self.log("✅ 單次轉錄完成")
+                except Exception as e:
+                    self.log(f"❌ 單次轉錄失敗: {e}")
+                    import traceback
+                    self.log(f"🔍 詳細錯誤:\n{traceback.format_exc()}")
+                    return False
             
             # 生成 SRT 字幕
             if use_optimizer:
                 self.set_status("正在生成優化的 SRT 字幕...", "blue")
-                srt_content = optimizer.generate_optimized_srt(
-                    result=result,
-                    language=language,
-                    filter_repetitive=self.filter_repetitive.get(),
-                    merge_short_segments=True
-                )
+                try:
+                    srt_content = optimizer.generate_optimized_srt(
+                        result=result,
+                        language=language,
+                        filter_repetitive=self.filter_repetitive.get(),
+                        merge_short_segments=True
+                    )
+                except Exception as e:
+                    self.log(f"❌ 生成優化 SRT 失敗: {e}")
+                    import traceback
+                    self.log(f"🔍 詳細錯誤:\n{traceback.format_exc()}")
+                    return False
             else:
                 self.set_status("正在生成 SRT 字幕...", "blue")
                 srt_content = self.generate_basic_srt(result)
             
             # 寫入檔案
-            with open(output_srt, 'w', encoding='utf-8') as f:
-                f.write(srt_content)
+            try:
+                with open(output_srt, 'w', encoding='utf-8') as f:
+                    f.write(srt_content)
+                self.log(f"✅ 檔案寫入成功: {output_srt}")
+            except Exception as e:
+                self.log(f"❌ 檔案寫入失敗: {e}")
+                import traceback
+                self.log(f"🔍 詳細錯誤:\n{traceback.format_exc()}")
+                return False
             
             # 驗證檔案是否成功寫入
             if os.path.exists(output_srt):
@@ -1578,10 +1673,11 @@ class WhisperSubtitleGUI:
                 return False
             
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
             self.log(f"❌ 優化版 Python API 執行失敗: {e}")
-            # 如果優化版失敗，回退到基本版本
-            self.log("🔄 回退到基本版本...")
-            return self.run_basic_whisper_api(input_file, output_srt)
+            self.log(f"� 詳細錯誤信息:\n{error_details}")
+            return False
     
     def generate_basic_srt(self, result):
         """生成基本的 SRT 字幕（無優化器時使用）"""
@@ -1626,6 +1722,20 @@ class WhisperSubtitleGUI:
             
             self.log("🔄 使用基本版 Python API...")
             
+            # 檢查輸入檔案是否存在
+            if not os.path.exists(input_file):
+                raise FileNotFoundError(f"輸入檔案不存在: {input_file}")
+                
+            # 檢查輸出目錄是否存在，如果不存在則創建
+            output_dir = os.path.dirname(output_srt)
+            if output_dir and not os.path.exists(output_dir):
+                try:
+                    os.makedirs(output_dir, exist_ok=True)
+                    self.log(f"🔧 創建輸出目錄: {output_dir}")
+                except Exception as e:
+                    self.log(f"❌ 創建輸出目錄失敗: {e}")
+                    return False
+            
             # 決定使用的設備
             device = "cpu"
             if self.use_gpu.get():
@@ -1633,34 +1743,74 @@ class WhisperSubtitleGUI:
                     import torch
                     if torch.cuda.is_available():
                         device = "cuda"
+                        self.log("🚀 基本API使用 GPU 加速")
+                    else:
+                        self.log("💻 GPU不可用，基本API使用 CPU")
                 except ImportError:
-                    pass
+                    self.log("💻 PyTorch未安裝，基本API使用 CPU")
+            else:
+                self.log("💻 基本API強制使用 CPU")
             
             # 載入模型
+            self.log(f"📥 正在載入模型: {self.whisper_model.get()} (設備: {device})")
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                model = whisper.load_model(self.whisper_model.get(), device=device)
+                try:
+                    model = whisper.load_model(self.whisper_model.get(), device=device)
+                    self.log(f"✅ 模型載入成功")
+                except Exception as e:
+                    self.log(f"❌ 模型載入失敗: {e}")
+                    return False
             
             # 基本轉錄選項
+            language = self.language.get()
             options = {
-                "language": self.language.get() if self.language.get() != "auto" else None,
+                "language": language if language != "auto" else None,
                 "task": "transcribe",
                 "no_speech_threshold": self.no_speech_threshold.get(),
                 "temperature": self.temperature.get(),
                 "condition_on_previous_text": False,
             }
             
+            if language == "auto":
+                self.log("🔍 基本API使用自動語言偵測...")
+            else:
+                self.log(f"🌍 基本API使用指定語言: {language}")
+            
             # 執行轉錄
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                result = model.transcribe(input_file, **options)
+            try:
+                self.log("🚀 開始轉錄...")
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    result = model.transcribe(input_file, **options)
+                self.log("✅ 轉錄完成")
+            except Exception as e:
+                self.log(f"❌ 轉錄失敗: {e}")
+                import traceback
+                self.log(f"🔍 詳細錯誤:\n{traceback.format_exc()}")
+                return False
             
             # 生成基本 SRT
-            srt_content = self.generate_srt_from_result(result)
+            try:
+                self.log("📝 生成 SRT 內容...")
+                srt_content = self.generate_srt_from_result(result)
+                self.log("✅ SRT 內容生成完成")
+            except Exception as e:
+                self.log(f"❌ SRT 生成失敗: {e}")
+                import traceback
+                self.log(f"🔍 詳細錯誤:\n{traceback.format_exc()}")
+                return False
             
             # 寫入檔案
-            with open(output_srt, 'w', encoding='utf-8') as f:
-                f.write(srt_content)
+            try:
+                with open(output_srt, 'w', encoding='utf-8') as f:
+                    f.write(srt_content)
+                self.log(f"✅ 檔案寫入成功: {output_srt}")
+            except Exception as e:
+                self.log(f"❌ 檔案寫入失敗: {e}")
+                import traceback
+                self.log(f"🔍 詳細錯誤:\n{traceback.format_exc()}")
+                return False
             
             if os.path.exists(output_srt):
                 subtitle_count = srt_content.count('-->')
@@ -1670,7 +1820,10 @@ class WhisperSubtitleGUI:
             return False
             
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
             self.log(f"❌ 基本版 API 也失敗: {e}")
+            self.log(f"🔍 詳細錯誤信息:\n{error_details}")
             return False
     
     def generate_srt_from_result(self, result) -> str:
@@ -1801,6 +1954,32 @@ class WhisperSubtitleGUI:
             
         except Exception as e:
             messagebox.showerror("錯誤", f"無法預覽字幕: {e}")
+    
+    def open_subtitle_editor(self):
+        """開啟字幕編輯器"""
+        srt_file = self.output_srt_path.get()
+        if not srt_file or not os.path.exists(srt_file):
+            messagebox.showwarning("警告", "請先選擇一個存在的字幕檔案")
+            return
+        
+        try:
+            # 檢查字幕編輯器檔案是否存在
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            editor_path = os.path.join(script_dir, "subtitle_editor.py")
+            
+            if not os.path.exists(editor_path):
+                messagebox.showerror("錯誤", "找不到字幕編輯器檔案 (subtitle_editor.py)")
+                return
+            
+            # 啟動字幕編輯器
+            import subprocess
+            subprocess.Popen([sys.executable, editor_path, srt_file], 
+                           cwd=script_dir, shell=False)
+            self.log(f"✏️ 已開啟字幕編輯器: {srt_file}")
+            
+        except Exception as e:
+            self.log(f"❌ 開啟字幕編輯器失敗: {e}")
+            messagebox.showerror("錯誤", f"無法開啟字幕編輯器: {e}")
     
     def burn_subtitles(self):
         """燒錄字幕到影片"""
