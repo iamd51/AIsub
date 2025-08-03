@@ -132,6 +132,8 @@ demo_*.py
 verify_*.py
 sample_*.mp4
 sample_*.wav
+gui_test_*.srt
+*_test_*.srt
 
 # 但保留重要的核心檔案
 !whisper_subtitle_gui.py
@@ -139,6 +141,8 @@ sample_*.wav
 !subtitle_editor.py
 !check_installation.py
 !whisper_accuracy_optimizer.py
+!enhanced_music_filter.py
+!clean_music_subtitles.py
 
 # ========================================
 # 日誌和除錯檔案
@@ -155,11 +159,15 @@ check_gpu.bat
 move_whisper_models.bat
 start_optimized_gui.bat
 find_whisper_models.py
+diagnose_*.bat
+diagnose_*.py
 
 # 但保留核心批次檔案
 !install_whisper.bat
 !start_whisper_gui.bat
 !check_installation.bat
+!fix_winerror2.bat
+!clean_subtitles.bat
 
 # ========================================
 # 開發文件和摘要 (忽略開發過程文件，保留使用者文件)
@@ -173,6 +181,8 @@ GUI_OPTIMIZATION_SUMMARY.md
 OPTIMIZATION_UPDATE_SUMMARY.md
 SUCCESS_SUMMARY.md
 music_troubleshooting.md
+COMMIT_MESSAGE*.md
+WINERROR2_SOLUTION.md
 
 # 但保留重要的使用者文件
 !README.md
@@ -180,6 +190,10 @@ music_troubleshooting.md
 !WHISPER_OPTIMIZATION_GUIDE.md
 !GPU_ACCELERATION.md
 !RELEASE_NOTES_*.md
+!UPDATE_NOTES_*.md
+!QUICK_START*.md
+!MUSIC_SUBTITLE_GUIDE.md
+!FFMPEG_FIX_GUIDE.md
 !LICENSE
 
 # ========================================
@@ -239,11 +253,20 @@ models/
 !video_processor.py
 !subtitle_editor.py
 !whisper_accuracy_optimizer.py
+!enhanced_music_filter.py
+!clean_music_subtitles.py
 !check_installation.py
+!fix_ffmpeg_issue.py
+!quick_fix_ffmpeg.py
 !install_whisper.bat
 !start_whisper_gui.bat
 !check_installation.bat
+!fix_winerror2.bat
+!clean_subtitles.bat
 !requirements.txt
 !whisper_config.json.template
 !README.md
+!WHISPER_README.md
+!MUSIC_SUBTITLE_GUIDE.md
+!FFMPEG_FIX_GUIDE.md
 !LICENSE
